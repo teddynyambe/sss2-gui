@@ -401,8 +401,8 @@ pytest tests/
 
 ## Contributing
 
-This is a proprietary project. For questions or issues, contact the development team.
+For questions or issues, contact Teddy Nyambe teddy@infinityworx.co
 
 ## License
 
-Proprietary - All Rights Reserved
+LGPL v3 (Lesser GPL v3) - All Rights Reserved
