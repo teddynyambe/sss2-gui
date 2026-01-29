@@ -7,12 +7,10 @@ class Settings(BaseSettings):
     """Application settings loaded from environment."""
     
     # Serial port configuration
-    SSS2_SERIAL_PORT: str = "/dev/tty.usbmodem40768801"  # Mac default
+    # Empty = auto-detect SSS2 (tty.usbmodem* on Mac, ttyACM* on Linux).
+    # Set SSS2_SERIAL_PORT in env to use a specific port.
+    SSS2_SERIAL_PORT: str = ""
     SSS2_BAUDRATE: int = 115200
-    
-    # Override serial port from environment
-    # Default on Mac: /dev/tty.usbmodem40768801
-    # Allow override by env var SSS2_SERIAL_PORT
     
     # Store paths
     BASE_DIR: Path = Path(__file__).parent.parent

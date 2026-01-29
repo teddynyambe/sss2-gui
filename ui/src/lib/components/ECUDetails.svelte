@@ -37,7 +37,7 @@
     {error}
   </div>
 {:else if ecu}
-  <div class="bg-dark-card rounded-lg border border-dark-accent/20 p-6 space-y-6">
+  <div class="bg-dark-card rounded-lg border border-dark-accent/20 p-6 space-y-6" style="background-color: #1f2937!important;">
     <h4 class="text-xl font-semibold border-b border-dark-accent/20 pb-2">ECU Details</h4>
     
     <!-- Basic Info -->

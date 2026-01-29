@@ -41,8 +41,8 @@
   - API under /api
   - UI static files at /
 - Keep serial port configurable:
-  - default on Mac: /dev/tty.usbmodem40768801
-  - allow override by env var SSS2_SERIAL_PORT
+  - default: auto-detect SSS2 (tty.usbmodem* / cu.usbmodem* on Mac, ttyACM* on Linux)
+  - allow override by env var SSS2_SERIAL_PORT when set
 
 ## Data store requirements
 - store/ must contain:

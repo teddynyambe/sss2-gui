@@ -146,7 +146,7 @@
 </script>
 
 <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto py-8" role="dialog" aria-modal="true" onclick={onCancel} onkeydown={(e) => e.key === 'Escape' && onCancel()}>
-  <div class="bg-dark-card rounded-lg border border-dark-accent/20 p-6 max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto" onclick={(e) => e.stopPropagation()} role="document">
+  <div class="bg-dark-card rounded-lg border border-dark-accent/20 p-6 max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto" onclick={(e) => e.stopPropagation()} role="document" >
     <div class="flex items-center justify-between mb-6">
       <h3 class="text-2xl font-semibold">{ecuId ? 'Edit ECU' : 'Add New ECU'}</h3>
       <button
@@ -365,3 +365,9 @@
     {/if}
   </div>
 </div>
+
+<style>
+  .bg-dark-card.rounded-lg.border.border-dark-accent\/20.p-6.max-w-4xl.w-full.mx-4.my-8.max-h-\[90vh\].overflow-y-auto {
+    background-color: #083402!important;
+  }
+</style>

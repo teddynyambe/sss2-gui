@@ -1,13 +1,33 @@
 """Async serial service for SSS2 communication."""
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from typing import Optional, Callable, Dict
 import serial_asyncio
+import serial.tools.list_ports
 
 from core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _detect_sss2_port() -> Optional[str]:
+    """
+    Auto-detect SSS2 serial port.
+    Prefers tty.usbmodem* on macOS, ttyACM* on Linux. Returns first match, or None.
+    """
+    candidates = []
+    for p in serial.tools.list_ports.comports():
+        dev = (p.device or "").lower()
+        if "usbmodem" in dev or "ttyacm" in dev:
+            candidates.append(p.device)
+    if sys.platform == "darwin":
+        # Prefer tty over cu on Mac; sort for stable order
+        candidates.sort(key=lambda x: (("cu." in x.lower(), x)))
+    else:
+        candidates.sort()
+    return candidates[0] if candidates else None
 
 
 class SerialConnectionError(Exception):
@@ -22,10 +42,11 @@ class CommandTimeoutError(Exception):
 
 class SerialService:
     """Async serial service for SSS2 communication."""
-    
+
     def __init__(self):
         """Initialize serial service."""
-        self.port = settings.SSS2_SERIAL_PORT
+        self._config_port = (settings.SSS2_SERIAL_PORT or "").strip()
+        self.port = self._config_port or "auto-detect"
         self.baudrate = settings.SSS2_BAUDRATE
         self.connected = False
         self._reader: Optional[asyncio.StreamReader] = None
@@ -43,18 +64,28 @@ class SerialService:
         
     def set_connection_callback(self, callback: Callable[[bool, str, Optional[str]], None]) -> None:
         """Set callback for connection status changes.
-        
+
         Args:
             callback: Function called with (connected: bool, port: str, message: Optional[str])
         """
         self._on_connection_changed = callback
-    
+
+    def _resolve_port(self) -> Optional[str]:
+        """Resolve serial port: use configured port if set and present, else auto-detect."""
+        if self._config_port:
+            p = Path(self._config_port)
+            if p.exists():
+                return self._config_port
+            return None
+        return _detect_sss2_port()
+
     async def start(self) -> None:
         """Start serial service (connect and start background tasks)."""
         if self._connection_task is None:
             self._command_queue = asyncio.Queue()
             self._connection_task = asyncio.create_task(self._connection_loop())
-            logger.info(f"Serial service starting on {self.port}")
+            mode = f"port {self._config_port}" if self._config_port else "auto-detect"
+            logger.info(f"Serial service starting ({mode})")
     
     async def stop(self) -> None:
         """Stop serial service (disconnect and clean up tasks)."""
@@ -147,22 +178,32 @@ class SerialService:
         """Background task for managing serial connection."""
         while True:
             try:
-                # Check if device exists
-                port_path = Path(self.port)
-                if not port_path.exists():
+                # Resolve port (configured or auto-detected)
+                resolved = self._resolve_port()
+                if not resolved:
                     if self.connected:
-                        logger.warning(f"Serial port {self.port} does not exist")
+                        logger.warning("SSS2 device lost or not found")
+                        self.connected = False
+                        if self._on_connection_changed:
+                            self._on_connection_changed(False, self.port, "Device not found")
+                    self.port = "auto-detect" if not self._config_port else self._config_port
+                    await asyncio.sleep(self._heartbeat_interval)
+                    continue
+                if not Path(resolved).exists():
+                    if self.connected:
+                        logger.warning(f"Serial port {resolved} no longer exists")
                         self.connected = False
                         if self._on_connection_changed:
                             self._on_connection_changed(False, self.port, "Device not found")
                     await asyncio.sleep(self._heartbeat_interval)
                     continue
-                
+                self.port = resolved
+
                 # Skip if already connected and tasks are running
                 if self.connected and self._reader and self._writer and self._read_task and not self._read_task.done():
                     await asyncio.sleep(1.0)  # Check connection status periodically
                     continue
-                
+
                 # Try to connect (only if not already connected)
                 if not self.connected:
                     logger.info(f"Connecting to {self.port} at {self.baudrate} baud...")
@@ -171,10 +212,10 @@ class SerialService:
                             url=self.port,
                             baudrate=self.baudrate
                         )
-                        
+
                         self.connected = True
                         logger.info(f"Connected to {self.port}")
-                        
+
                         if self._on_connection_changed:
                             self._on_connection_changed(True, self.port, "Connected")
                         

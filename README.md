@@ -165,22 +165,22 @@ Access the application at `http://localhost:8000`
 
 ### Serial Port
 
-The serial port can be configured via environment variable:
+**Auto-detect (default):** The backend automatically detects the SSS2 device by scanning for `tty.usbmodem*` / `cu.usbmodem*` on macOS and `ttyACM*` on Linux. No configuration needed when using a single SSS2.
+
+**Override:** To use a specific port, set the environment variable:
 
 ```bash
-export SSS2_SERIAL_PORT=/dev/tty.usbmodem40768801  # Mac default
+export SSS2_SERIAL_PORT=/dev/tty.usbmodem40787801  # Mac example
 # or
-export SSS2_SERIAL_PORT=/dev/ttyACM0  # Linux/Pi default
+export SSS2_SERIAL_PORT=/dev/ttyACM0               # Linux/Pi example
 ```
 
 Or create a `.env` file in `app-ui/`:
 ```
-SSS2_SERIAL_PORT=/dev/tty.usbmodem40768801
+SSS2_SERIAL_PORT=/dev/tty.usbmodem40787801
 ```
 
-**Default Serial Ports:**
-- **Mac**: `/dev/tty.usbmodem40768801`
-- **Linux/Raspberry Pi**: `/dev/ttyACM0`
+When unset or empty, the service uses auto-detect. When set, the configured port is used only if it exists.
 
 ## API Endpoints
 
