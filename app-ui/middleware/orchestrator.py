@@ -3,6 +3,7 @@ import asyncio
 import logging
 from typing import Any, Callable, Dict, Optional, Set
 
+from core.config import settings
 from services.can_service import CANService, CANConnectionError, CANTimeoutError
 from services.state_service import StateService
 
@@ -37,6 +38,24 @@ class Orchestrator:
         await self.can_service.start()
         self._initialized = True
         logger.info("Orchestrator initialized")
+
+        # Auto-connect to CAN bus immediately (like firmware claiming address on boot)
+        if settings.CAN_AUTO_CONNECT:
+            try:
+                await self.can_service.connect(
+                    settings.CAN_INTERFACE,
+                    settings.CAN_CHANNEL,
+                    settings.CAN_BITRATE,
+                )
+                logger.info(
+                    f"Auto-connected: {settings.CAN_INTERFACE}/{settings.CAN_CHANNEL} "
+                    f"@ {settings.CAN_BITRATE} bps — address claiming started"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"CAN auto-connect failed ({settings.CAN_CHANNEL}): {e} "
+                    f"— manual connect available in UI"
+                )
 
     async def shutdown(self) -> None:
         if not self._initialized:
