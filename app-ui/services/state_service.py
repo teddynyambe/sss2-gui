@@ -1,95 +1,57 @@
-"""State service for loading and saving device state."""
-from typing import Any
+"""State service — in-memory device state cache (no file persistence)."""
 from datetime import datetime
-from core.config import settings
-from store.files import FileStore
+from typing import Any
 
 
 class StateService:
-    """Service for loading and saving device state."""
-    
-    def __init__(self):
-        """Initialize state service."""
-        self.store = FileStore(str(settings.STORE_DIR))
+    """In-memory cache of SSS2 device state.
+
+    State is populated via GET_ALL_SETTINGS over J1939 CAN.
+    No JSON file is written; the SSS2 is always the source of truth.
+    """
+
+    def __init__(self) -> None:
         self._state: dict[str, Any] | None = None
-    
+
     def get_state(self) -> dict[str, Any]:
-        """
-        Get current device state.
-        
-        Returns:
-            Current device state dictionary
-        """
+        """Return current cached state, or default if not yet populated."""
         if self._state is None:
-            state_data = self.store.read_json(settings.STATE_FILE)
-            if state_data is None:
-                # Initialize with default state if file doesn't exist
-                state_data = self._get_default_state()
-                self.save_state(state_data)
-            self._state = state_data
-        
+            return self._default_state()
         return self._state
-    
-    def save_state(self, state: dict[str, Any] | None = None) -> None:
-        """
-        Save device state.
-        
-        Args:
-            state: State dictionary to save, or None to save current cached state
-        """
-        if state is None:
-            state = self._state
-        
-        if state is None:
-            raise ValueError("No state to save")
-        
-        # Update timestamp
+
+    def set_state(self, state: dict[str, Any]) -> None:
+        """Replace entire cached state (called after GET_ALL_SETTINGS)."""
         state["last_updated"] = datetime.utcnow().isoformat() + "Z"
-        
-        self.store.write_json(settings.STATE_FILE, state)
         self._state = state
-    
+
     def update_state(self, updates: dict[str, Any]) -> dict[str, Any]:
-        """
-        Update state with partial updates.
-        
-        Args:
-            updates: Partial state updates (will be merged into current state)
-            
-        Returns:
-            Updated state
-        """
+        """Merge partial updates into the cached state."""
         state = self.get_state()
-        
-        # Deep merge updates
         self._deep_merge(state, updates)
-        
-        self.save_state(state)
+        state["last_updated"] = datetime.utcnow().isoformat() + "Z"
+        self._state = state
         return state
-    
+
+    def clear(self) -> None:
+        """Clear cached state (call on disconnect)."""
+        self._state = None
+
     def _deep_merge(self, base: dict[str, Any], updates: dict[str, Any]) -> None:
-        """Deep merge updates into base dictionary."""
         for key, value in updates.items():
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
                 self._deep_merge(base[key], value)
             else:
                 base[key] = value
-    
-    def _get_default_state(self) -> dict[str, Any]:
-        """Get default state structure."""
-        # Load default from file if it exists, otherwise return minimal structure
-        default_data = self.store.read_json(settings.STATE_FILE)
-        if default_data:
-            return default_data
-        
+
+    def _default_state(self) -> dict[str, Any]:
         return {
-            "sss2_version": None,
+            "sss2_sa": None,
             "last_updated": None,
-            "connected_port": None,
             "ignition": False,
             "potentiometers": {},
+            "potentiometer_power_groups": {},
             "vouts": {},
             "pwms": {},
             "can": {},
-            "j1708": {}
+            "j1708": {},
         }

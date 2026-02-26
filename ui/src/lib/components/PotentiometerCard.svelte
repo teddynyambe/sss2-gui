@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import type { PotentiometerDefinition, PotentiometerState } from '$lib/api/client';
-  import { deviceStore, updateState } from '$lib/stores/deviceStore.svelte';
+  import { deviceStore, updateState, togglePinnedPot } from '$lib/stores/deviceStore.svelte';
 
   // ✅ Using $props() rune for component props (Svelte 5)
   let { potDef, powerVoltage = '5V' }: { potDef: PotentiometerDefinition; powerVoltage?: '5V' | '12V' } = $props();
@@ -85,7 +85,8 @@
   const maxVoltage = $derived(powerVoltage === '12V' ? 12.0 : 5.0);
   const voltage = $derived(potState ? (potState.voltage ?? (potState.wiper_position / 255) * maxVoltage) : 0);
   const isEnabled = $derived(potState?.enabled ?? false);
-  
+  const isPinned = $derived(!!deviceStore.pinnedPotIds[potDef.id]);
+
   // Cleanup debounce timer on destroy
   onDestroy(() => {
     if (debounceTimer) {
@@ -128,8 +129,32 @@
   </button>
 
   <!-- Expanded View -->
-  {#if expanded && potState}
+  {#if expanded}
     <div class="border-t border-dark-accent/20 p-6 space-y-4">
+      {#if !potState}
+        <p class="text-sm text-yellow-400 italic">
+          No device state loaded — connect to CAN and select an SSS2 node to control this potentiometer.
+        </p>
+      {/if}
+      <!-- Dashboard Pin Toggle -->
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-gray-400">Show on Dashboard</span>
+        <button
+          class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+          class:bg-blue-600={isPinned}
+          class:bg-gray-600={!isPinned}
+          style="min-height: unset; min-width: unset;"
+          onclick={() => togglePinnedPot(potDef.id)}
+          title={isPinned ? 'Remove from Dashboard' : 'Pin to Dashboard'}
+        >
+          <span
+            class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+            class:translate-x-6={isPinned}
+            class:translate-x-1={!isPinned}
+          ></span>
+        </button>
+      </div>
+
       <!-- Fixed Fields (Read-only) -->
       <div class="grid grid-cols-2 gap-4 text-sm">
         <div>
@@ -164,10 +189,8 @@
           oninput={(e) => {
             const wiperPosition = parseInt(e.currentTarget.value, 10);
             const calculatedVoltage = (wiperPosition / 255) * maxVoltage;
-            // Update local state immediately for UI responsiveness
             localWiperPosition = wiperPosition;
             e.currentTarget.style.setProperty('--val', String(wiperPosition));
-            // Debounce the actual API call to avoid timeout errors from rapid updates
             updatePot({ wiper_position: wiperPosition, voltage: calculatedVoltage }, true);
           }}
           class="w-full mixer-slider"
@@ -212,97 +235,3 @@
     </div>
   {/if}
 </div>
-<style>
-  .mixer-slider {
-  /* variables you set from Svelte */
-  --min: 0;
-  --max: 255;
-  --val: 0;
-
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 46px;          /* input box height = thumb height */
-  background: transparent;
-  padding: 0;
-  margin: 0;
-  cursor: pointer;
-}
-
-/* ===== WebKit track with filled portion ===== */
-.mixer-slider::-webkit-slider-runnable-track {
-  height: 10px;           /* thin track */
-  border-radius: 2px;
-  background: linear-gradient(
-    to right,
-    #c9cdd1 0%,
-    #60a5fa calc((var(--val) - var(--min)) * 100% / (var(--max) - var(--min))),
-    #1f2937 calc((var(--val) - var(--min)) * 100% / (var(--max) - var(--min))),
-    #1f2937 100%
-  );
-}
-
-.mixer-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-
-  width: 36px;
-  height: 46px;
-  border-radius: 8px;
-  border: 2px solid #0f172a;
-  margin-top: -22px;
-  cursor: grab;
-  padding: 10px;
-
-  /* 🎛️ Base + vertical grooves */
-  background:
-    /* groove 1 */
-    linear-gradient(
-      to right,
-      transparent 9px,
-      rgba(15, 23, 42, 0.45) 10px,
-      rgba(15, 23, 42, 0.45) 11px,
-      transparent 12px
-    ),
-    /* groove 2 */
-    linear-gradient(
-      to right,
-      transparent 15px,
-      rgba(15, 23, 42, 0.45) 16px,
-      rgba(15, 23, 42, 0.45) 17px,
-      transparent 18px
-    ),
-    /* groove 3 */
-    linear-gradient(
-      to right,
-      transparent 21px,
-      rgba(15, 23, 42, 0.45) 22px,
-      rgba(15, 23, 42, 0.45) 23px,
-      transparent 24px
-    ),
-    #60a5fa; /* base thumb color */
-
-  background-clip: padding-box;
-  box-shadow: 0 6px 14px rgba(0,0,0,0.45);
-}
-
-/* ===== Firefox filled track support ===== */
-.mixer-slider::-moz-range-track {
-  height: 4px;
-  background: #1f2937;
-  border-radius: 2px;
-}
-.mixer-slider::-moz-range-progress {
-  height: 10px;
-  background: #60a5fa;
-  border-radius: 2px;
-}
-.mixer-slider::-moz-range-thumb {
-  width: 34px;
-  height: 46px;
-  background: #60a5fa;
-  border-radius: 8px;
-  border: 2px solid #0f172a;
-  box-shadow: 0 6px 14px rgba(0,0,0,0.45);
-}
-</style>

@@ -28,9 +28,8 @@ export interface PotentiometerDefinition {
 }
 
 export interface DeviceState {
-  sss2_version: string | null;
+  sss2_sa: number | null;
   last_updated: string | null;
-  connected_port: string | null;
   ignition: boolean;
   potentiometers: Record<string, PotentiometerState>;
   potentiometer_power_groups?: Record<string, PotentiometerPowerGroup>;
@@ -42,35 +41,56 @@ export interface DeviceState {
 
 export interface PotentiometerState {
   wiper_position: number;
-  voltage: number;  // Calculated based on power setting (0-5V or 0-12V)
-  enabled: boolean;  // On/Off state (default: false)
-  // Removed: term_a_connect, term_b_connect, wiper_connect
-  application?: string;  // Deprecated - now from ECU
-  wire_color?: string;  // Deprecated - now from ECU
+  voltage: number;
+  enabled: boolean;
+  application?: string;
+  wire_color?: string;
 }
 
 export interface PotentiometerPowerGroup {
-  group_id: string;  // e.g., "1-2", "3-4"
-  voltage_setting: '5V' | '12V';  // Selected voltage
-  potentiometers: string[];  // Pot IDs in this group, e.g., ["po1", "po2"]
-}
-
-export interface Snapshot {
-  id: string;
-  label: string;
-  created_at: string;
+  group_id: string;
+  voltage_setting: '5V' | '12V';
+  potentiometers: string[];
 }
 
 export interface IgnitionRequest {
   on: boolean;
+  sss2_sa?: number;
 }
 
 export interface IgnitionResponse {
   accepted: boolean;
   executed: boolean;
   detail: string;
-  confirmation: string | null;
   ignition: boolean;
+}
+
+export interface CANInterface {
+  interface: string;
+  channel: string;
+  bitrate: number;
+  description: string;
+}
+
+export interface CANStatus {
+  connected: boolean;
+  interface: string;
+  channel: string;
+  bitrate: number;
+  sa: number;
+  address_claimed: boolean;
+  state: 'disconnected' | 'connecting' | 'claiming' | 'claimed' | 'cannot_claim';
+}
+
+export interface CANNode {
+  name_int: number;
+  name_hex: string;
+  is_sss2: boolean;
+  label?: string;
+  function?: string;
+  manufacturer?: string;
+  industry_group?: string;
+  vehicle_system?: string;
 }
 
 export interface PinConfiguration {
@@ -150,46 +170,74 @@ class ApiClient {
     return this.request<Catalog>('/catalog');
   }
 
-  async getState(): Promise<DeviceState> {
-    return this.request<DeviceState>('/sss2/state');
+  // ---------- SSS2 state / ignition ----------
+
+  async getState(sss2_sa: number = 0x80): Promise<DeviceState> {
+    return this.request<DeviceState>(`/sss2/state?sss2_sa=${sss2_sa}`);
   }
 
-  async updateState(state: Partial<DeviceState>): Promise<DeviceState> {
+  async updateState(state: Partial<DeviceState>, sss2_sa: number = 0x80): Promise<DeviceState> {
     return this.request<DeviceState>('/sss2/state', {
       method: 'PUT',
-      body: JSON.stringify({ state }),
+      body: JSON.stringify({ state, sss2_sa }),
     });
   }
 
-  async setIgnition(on: boolean): Promise<IgnitionResponse> {
+  async setIgnition(on: boolean, sss2_sa: number = 0x80): Promise<IgnitionResponse> {
     return this.request<IgnitionResponse>('/sss2/ignition', {
       method: 'POST',
-      body: JSON.stringify({ on }),
+      body: JSON.stringify({ on, sss2_sa }),
     });
   }
 
-  async createSnapshot(label?: string): Promise<Snapshot> {
-    return this.request<Snapshot>('/snapshots', {
+  // ---------- CAN ----------
+
+  async listCANInterfaces(): Promise<CANInterface[]> {
+    return this.request<CANInterface[]>('/can/interfaces');
+  }
+
+  async getCANStatus(): Promise<CANStatus> {
+    return this.request<CANStatus>('/can/status');
+  }
+
+  async connectCAN(iface: string, channel: string, bitrate: number): Promise<CANStatus> {
+    return this.request<CANStatus>('/can/connect', {
       method: 'POST',
-      body: JSON.stringify({ label: label || null }),
+      body: JSON.stringify({ interface: iface, channel, bitrate }),
     });
   }
 
-  async listSnapshots(): Promise<Snapshot[]> {
-    return this.request<Snapshot[]>('/snapshots');
+  async disconnectCAN(): Promise<CANStatus> {
+    return this.request<CANStatus>('/can/disconnect', { method: 'POST' });
   }
 
-  async revertSnapshot(snapshotId: string): Promise<DeviceState> {
-    return this.request<DeviceState>(`/snapshots/${snapshotId}/revert`, {
+  async scanCANNodes(timeout_ms: number = 1250): Promise<{ nodes: Record<string, CANNode> }> {
+    return this.request<{ nodes: Record<string, CANNode> }>('/can/scan', {
       method: 'POST',
+      body: JSON.stringify({ timeout_ms }),
     });
   }
 
-  async deleteSnapshot(snapshotId: string): Promise<void> {
-    await this.request(`/snapshots/${snapshotId}`, {
-      method: 'DELETE',
+  async getCANNodes(): Promise<{ nodes: Record<string, CANNode> }> {
+    return this.request<{ nodes: Record<string, CANNode> }>('/can/nodes');
+  }
+
+  async connectMonitorBus(channel: string, bitrate: number): Promise<{ channel: string; status: string }> {
+    return this.request('/can/monitor/connect', {
+      method: 'POST',
+      body: JSON.stringify({ channel, bitrate }),
     });
   }
+
+  async disconnectMonitorBus(channel: string): Promise<{ channel: string; status: string }> {
+    return this.request(`/can/monitor/${channel}`, { method: 'DELETE' });
+  }
+
+  async getMonitorStatus(): Promise<{ channel: string; status: string }[]> {
+    return this.request('/can/monitor/status');
+  }
+
+  // ---------- ECU ----------
 
   async listECUs(): Promise<ECUItem[]> {
     return this.request<ECUItem[]>('/ecu');

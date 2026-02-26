@@ -1,9 +1,9 @@
-"""Connection status WebSocket endpoint."""
+"""CAN connection status — REST and WebSocket endpoints."""
 import asyncio
-import json
 import logging
-from typing import Set
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from typing import Any, Set
+
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from middleware.orchestrator import Orchestrator
@@ -12,143 +12,145 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/connection", tags=["connection"])
 
+_active_ws: Set[WebSocket] = set()
 
-class ConnectionStatusResponse(BaseModel):
+
+# ---------- Models ----------
+
+class CANStatusResponse(BaseModel):
     connected: bool
-    port: str
-    message: str | None
+    interface: str
+    channel: str
+    bitrate: int
+    sa: int
+    address_claimed: bool
+    state: str
 
+
+# ---------- Dependency ----------
 
 def get_orchestrator() -> Orchestrator:
-    """Dependency to get orchestrator."""
     from main import get_orchestrator_instance
     return get_orchestrator_instance()
 
 
-# Set of active WebSocket connections
-_active_connections: Set[WebSocket] = set()
+# ---------- Broadcast helpers ----------
 
-
-@router.get("/status", response_model=ConnectionStatusResponse)
-async def get_connection_status(orchestrator: Orchestrator = Depends(get_orchestrator)):
-    """Get current connection status via REST API."""
-    is_connected = orchestrator.is_connected()
-    port = orchestrator.serial_service.port if orchestrator.serial_service else "unknown"
-    message = "Connected" if is_connected else "Disconnected"
-    
-    logger.info(f"REST API connection status check: connected={is_connected}, port={port}")
-    
-    return ConnectionStatusResponse(
-        connected=is_connected,
-        port=port,
-        message=message
-    )
-
-
-def broadcast_connection_status(connected: bool, port: str, message: str | None) -> None:
-    """Broadcast connection status to all connected WebSocket clients.
-    
-    Args:
-        connected: Whether device is connected
-        port: Serial port name
-        message: Optional status message
-    """
-    payload = {
-        "type": "connection_status",
-        "connected": connected,
-        "port": port,
-        "message": message
-    }
-    
-    # Remove disconnected clients
-    disconnected = set()
-    for connection in _active_connections.copy():
+def broadcast_can_status(status: dict[str, Any]) -> None:
+    """Broadcast CAN status to all WebSocket clients."""
+    payload = {"type": "can_status", **status}
+    disconnected: Set[WebSocket] = set()
+    for ws in _active_ws.copy():
         try:
-            asyncio.create_task(connection.send_json(payload))
+            asyncio.create_task(ws.send_json(payload))
         except Exception as e:
-            logger.debug(f"Failed to send to WebSocket client: {e}")
-            disconnected.add(connection)
-    
-    # Clean up disconnected clients
-    for connection in disconnected:
-        _active_connections.discard(connection)
-    
-    if _active_connections:
-        logger.debug(f"Broadcasted connection status to {len(_active_connections)} clients")
+            logger.debug(f"WS send failed: {e}")
+            disconnected.add(ws)
+    for ws in disconnected:
+        _active_ws.discard(ws)
 
+
+def broadcast_node_discovered(sa: int, node_info: dict[str, Any]) -> None:
+    """Broadcast a newly discovered J1939 node to all WebSocket clients."""
+    payload = {
+        "type": "node_discovered",
+        "sa": sa,
+        **node_info,
+    }
+    for ws in _active_ws.copy():
+        try:
+            asyncio.create_task(ws.send_json(payload))
+        except Exception:
+            pass
+
+
+def broadcast_state_fetched(sss2_sa: int, settings: dict[int, int]) -> None:
+    """Broadcast state_fetched after GET_ALL_SETTINGS completes."""
+    payload = {
+        "type": "state_fetched",
+        "sss2_sa": sss2_sa,
+        "settings": {str(k): v for k, v in settings.items()},
+    }
+    for ws in _active_ws.copy():
+        try:
+            asyncio.create_task(ws.send_json(payload))
+        except Exception:
+            pass
+
+
+async def _broadcast_ecu_frame(frame: dict[str, Any]) -> None:
+    """Broadcast an ECU CAN frame to all connected WebSocket clients."""
+    payload = {"type": "ecu_frame", "frame": frame}
+    for ws in _active_ws.copy():
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            pass
+
+
+_ecu_callback_registered = False
+
+
+# ---------- REST ----------
+
+@router.get("/status", response_model=CANStatusResponse)
+async def get_status(orchestrator: Orchestrator = Depends(get_orchestrator)):
+    """Return current CAN connection status."""
+    return orchestrator.can_status()
+
+
+# ---------- WebSocket ----------
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for connection status updates."""
     await websocket.accept()
-    _active_connections.add(websocket)
-    logger.info(f"WebSocket client connected. Total clients: {len(_active_connections)}")
-    
+    _active_ws.add(websocket)
+    logger.info(f"WS client connected. Total: {len(_active_ws)}")
+
     orchestrator = get_orchestrator()
-    on_connection_changed = None
-    
+
+    def _on_can_state(status: dict[str, Any]) -> None:
+        try:
+            asyncio.create_task(websocket.send_json({"type": "can_status", **status}))
+        except Exception:
+            pass
+
+    def _on_node_discovered(sa: int, node_info: dict[str, Any]) -> None:
+        try:
+            asyncio.create_task(websocket.send_json({
+                "type": "node_discovered",
+                "sa": sa,
+                **node_info,
+            }))
+        except Exception:
+            pass
+
+    orchestrator.register_connection_callback(_on_can_state)
+    if orchestrator.can_service:
+        orchestrator.can_service.register_node_callback(_on_node_discovered)
+        # Register the broadcast ECU frame callback once (shared across all WS clients)
+        global _ecu_callback_registered
+        if not _ecu_callback_registered:
+            orchestrator.can_service.set_ecu_ws_callback(_broadcast_ecu_frame)
+            _ecu_callback_registered = True
+
     try:
-        # Register callback for connection status changes FIRST
-        # This ensures we don't miss connection status updates that happen
-        # between WebSocket connection and callback registration
-        def on_connection_changed(connected: bool, port: str, message: str | None) -> None:
-            """Callback for connection status changes."""
-            try:
-                asyncio.create_task(websocket.send_json({
-                    "type": "connection_status",
-                    "connected": connected,
-                    "port": port,
-                    "message": message
-                }))
-            except Exception as e:
-                logger.debug(f"Failed to send connection status update: {e}")
-        
-        orchestrator.register_connection_callback(on_connection_changed)
-        
-        # Send initial connection status
-        is_connected = orchestrator.is_connected()
-        port = orchestrator.serial_service.port if orchestrator.serial_service else "unknown"
-        
-        await websocket.send_json({
-            "type": "connection_status",
-            "connected": is_connected,
-            "port": port,
-            "message": "Connected" if is_connected else "Disconnected"
-        })
-        
-        # Re-check connection status after a short delay to catch any
-        # connection that might have happened during WebSocket setup
-        await asyncio.sleep(0.5)
-        current_connected = orchestrator.is_connected()
-        current_port = orchestrator.serial_service.port if orchestrator.serial_service else "unknown"
-        
-        # Only send update if status changed
-        if current_connected != is_connected or current_port != port:
-            await websocket.send_json({
-                "type": "connection_status",
-                "connected": current_connected,
-                "port": current_port,
-                "message": "Connected" if current_connected else "Disconnected"
-            })
-        
-        # Keep connection alive and handle client messages
+        # Send current status immediately
+        await websocket.send_json({"type": "can_status", **orchestrator.can_status()})
+
         while True:
             try:
-                # Wait for client ping or timeout
                 await websocket.receive_text()
-                # Echo back or handle ping/pong
             except WebSocketDisconnect:
                 break
-                
+
     except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected")
+        logger.info("WS client disconnected")
     except Exception as e:
-        logger.error(f"WebSocket error: {e}", exc_info=True)
+        logger.error(f"WS error: {e}", exc_info=True)
     finally:
-        _active_connections.discard(websocket)
-        if on_connection_changed:
-            try:
-                orchestrator.unregister_connection_callback(on_connection_changed)
-            except Exception:
-                pass
-        logger.info(f"WebSocket client disconnected. Total clients: {len(_active_connections)}")
+        _active_ws.discard(websocket)
+        orchestrator.unregister_connection_callback(_on_can_state)
+        if orchestrator.can_service:
+            orchestrator.can_service.unregister_node_callback(_on_node_discovered)
+        logger.info(f"WS client gone. Total: {len(_active_ws)}")

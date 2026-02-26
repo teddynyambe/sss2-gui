@@ -1,11 +1,13 @@
 <script lang="ts">
   import { deviceStore } from '$lib/stores/deviceStore.svelte';
-  
-  // ✅ Using $derived runes for reactive values
-  const connectionStatus = $derived(deviceStore.connectionStatus);
-  const isVisible = $derived(!connectionStatus.connected && connectionStatus.message !== null);
-  const statusMessage = $derived(connectionStatus.message || 'SSS2 Connection Lost');
-  const port = $derived(connectionStatus.port);
+
+  const canStatus = $derived(deviceStore.canStatus);
+
+  // Show toast only when address cannot be claimed (contention error)
+  const isVisible = $derived(canStatus.state === 'cannot_claim');
+  const statusMessage = $derived(
+    `SA 0x${canStatus.sa.toString(16).toUpperCase().padStart(2, '0')} is contested — another node has a lower NAME and won arbitration.`
+  );
 </script>
 
 {#if isVisible}
@@ -31,11 +33,11 @@
         </svg>
       </div>
       <div class="flex-1">
-        <h3 class="font-bold text-lg mb-1">Connection Lost</h3>
+        <h3 class="font-bold text-lg mb-1">Cannot Claim Address</h3>
         <p class="text-sm opacity-90">{statusMessage}</p>
-        {#if port}
-          <p class="text-xs opacity-75 mt-1">Port: {port}</p>
-        {/if}
+        <p class="text-xs opacity-75 mt-1">
+          Disconnect and reconnect to retry, or choose a different CAN interface.
+        </p>
       </div>
     </div>
   </div>

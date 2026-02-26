@@ -1,57 +1,78 @@
-/** WebSocket client for connection status updates. */
+/** WebSocket client for CAN status and J1939 network events. */
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
-export interface ConnectionStatusMessage {
-  type: 'connection_status';
+// ---------- Message types ----------
+
+export interface CANStatusMessage {
+  type: 'can_status';
   connected: boolean;
-  port: string;
-  message: string | null;
+  interface: string;
+  channel: string;
+  bitrate: number;
+  sa: number;
+  address_claimed: boolean;
+  state: 'disconnected' | 'connecting' | 'claiming' | 'claimed' | 'cannot_claim';
 }
 
-export type ConnectionStatusCallback = (status: ConnectionStatusMessage) => void;
+export interface NodeDiscoveredMessage {
+  type: 'node_discovered';
+  sa: number;
+  name_int: number;
+  name_hex: string;
+  is_sss2: boolean;
+}
+
+export interface StateFetchedMessage {
+  type: 'state_fetched';
+  sss2_sa: number;
+  settings: Record<string, number>;
+}
+
+export interface ECUFrameMessage {
+  type: 'ecu_frame';
+  frame: {
+    ts: number;
+    arb_id: string;
+    pgn: string;
+    sa: string;
+    data: string;
+  };
+}
+
+export type WSMessage = CANStatusMessage | NodeDiscoveredMessage | StateFetchedMessage | ECUFrameMessage;
+export type WSCallback = (message: WSMessage) => void;
 
 class WebSocketClient {
   private ws: WebSocket | null = null;
-  private reconnectInterval: number = 3000; // 3 seconds
+  private reconnectInterval: number = 3000;
   private reconnectTimer: number | null = null;
-  private callbacks: Set<ConnectionStatusCallback> = new Set();
+  private callbacks: Set<WSCallback> = new Set();
   private url: string;
 
   constructor(url: string = '/api/connection/ws') {
-    // Determine if we're in development mode
-    const isDev = import.meta.env.DEV;
-    
     if (url.startsWith('ws://') || url.startsWith('wss://')) {
-      // Already a full WebSocket URL
       this.url = url;
     } else if (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) {
-      // API_BASE is absolute (e.g., http://localhost:8000)
-      // Convert to WebSocket protocol
       const wsProtocol = API_BASE.startsWith('https://') ? 'wss:' : 'ws:';
       const baseUrl = API_BASE.replace(/^https?:/, wsProtocol).replace(/\/$/, '');
       this.url = `${baseUrl}${url.startsWith('/') ? url : '/' + url}`;
-    } else if (isDev) {
-      // In development, connect directly to backend (bypass proxy issues)
-      // Vite proxy can be unreliable for WebSockets
-      this.url = `ws://localhost:8000${url}`;
     } else {
-      // Production: use current origin
+      // In both dev and prod, use the same host the page was loaded from.
+      // Vite proxy (ws: true) forwards /api/... WebSocket upgrades to the backend.
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       this.url = `${protocol}//${window.location.host}${url}`;
     }
   }
 
   connect(): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      return;
-    }
+    if (this.ws?.readyState === WebSocket.OPEN) return;
 
     try {
       this.ws = new WebSocket(this.url);
       this.setupEventHandlers();
     } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
+      console.error('Failed to create WebSocket:', error);
       this.scheduleReconnect();
     }
   }
@@ -68,13 +89,10 @@ class WebSocketClient {
 
     this.ws.onmessage = (event) => {
       try {
-        const message: ConnectionStatusMessage = JSON.parse(event.data);
-        if (message.type === 'connection_status') {
-          // Only log if status actually changed (reduce noise)
-          this.notifyCallbacks(message);
-        }
+        const message: WSMessage = JSON.parse(event.data);
+        this.notifyCallbacks(message);
       } catch (error) {
-        console.error('Failed to parse WebSocket message:', error, event.data);
+        console.error('Failed to parse WS message:', error, event.data);
       }
     };
 
@@ -90,30 +108,25 @@ class WebSocketClient {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
-
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
     }, this.reconnectInterval);
   }
 
-  private notifyCallbacks(message: ConnectionStatusMessage): void {
-    this.callbacks.forEach(callback => {
+  private notifyCallbacks(message: WSMessage): void {
+    this.callbacks.forEach(cb => {
       try {
-        callback(message);
+        cb(message);
       } catch (error) {
-        console.error('Error in connection status callback:', error);
+        console.error('WS callback error:', error);
       }
     });
   }
 
-  subscribe(callback: ConnectionStatusCallback): () => void {
+  subscribe(callback: WSCallback): () => void {
     this.callbacks.add(callback);
-    
-    // Return unsubscribe function
-    return () => {
-      this.callbacks.delete(callback);
-    };
+    return () => this.callbacks.delete(callback);
   }
 
   disconnect(): void {
@@ -121,12 +134,10 @@ class WebSocketClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
-
     this.callbacks.clear();
   }
 
@@ -135,7 +146,7 @@ class WebSocketClient {
   }
 }
 
-// Singleton instance
+// Singleton
 let wsClientInstance: WebSocketClient | null = null;
 
 export function connectWebSocket(): WebSocketClient {

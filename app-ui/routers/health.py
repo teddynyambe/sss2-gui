@@ -30,14 +30,16 @@ async def health_check(
     orchestrator: Orchestrator = Depends(get_orchestrator)
 ):
     """Health check endpoint."""
-    logger.info(f"Health check requested from {request.client.host if request.client else 'unknown'}")
-    
+    logger.info(
+        f"Health check requested fromtesting {request.client.host if request.client else 'unknown'}")
+
     is_connected = orchestrator.is_connected() if orchestrator else False
     response = HealthResponse(
         status="ok",
         version=settings.VERSION,
         connected=is_connected
     )
-    
-    logger.info(f"Health check response: {response.status}, connected={response.connected}")
+
+    logger.info(
+        f"Health check response: {response.status}, connected={response.connected}")
     return response
