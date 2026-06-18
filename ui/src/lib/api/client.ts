@@ -8,6 +8,24 @@ export interface HealthResponse {
   connected: boolean;
 }
 
+export interface IfaceState {
+  name: string;
+  present: boolean;   // interface exists in the kernel (MCP2515 overlay loaded)
+  up: boolean;        // link is administratively UP
+  bitrate: number | null;
+}
+
+export interface CanCtlStatus {
+  interfaces: IfaceState[];
+}
+
+export interface IfaceActionResponse {
+  name: string;
+  ok: boolean;
+  up: boolean;
+  detail: string;
+}
+
 export interface Catalog {
   potentiometers: PotentiometerDefinition[];
   vouts: any[];
@@ -265,6 +283,20 @@ class ApiClient {
     await this.request(`/ecu/${ecuId}`, {
       method: 'DELETE',
     });
+  }
+
+  // ---------- CAN interface control (OS-level can0/can1 up/down) ----------
+
+  async getCANInterfaceStatus(): Promise<CanCtlStatus> {
+    return this.request<CanCtlStatus>('/canctl/status');
+  }
+
+  async canInterfaceUp(iface: string): Promise<IfaceActionResponse> {
+    return this.request<IfaceActionResponse>(`/canctl/${iface}/up`, { method: 'POST' });
+  }
+
+  async canInterfaceDown(iface: string): Promise<IfaceActionResponse> {
+    return this.request<IfaceActionResponse>(`/canctl/${iface}/down`, { method: 'POST' });
   }
 }
 

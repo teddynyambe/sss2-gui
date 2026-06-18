@@ -1,0 +1,7 @@
+# Let the SSS2 backend (user 'student') start/stop the CAN interface units
+# without a password — used by app-ui/routers/canctl.py for the UI buttons.
+# Install:  sudo install -m 0440 deploy/sudoers/sss2-can /etc/sudoers.d/sss2-can
+# Validate: sudo visudo -cf /etc/sudoers.d/sss2-can
+#
+# Scope is intentionally narrow: only these exact systemctl invocations are allowed.
+student ALL=(root) NOPASSWD: /usr/bin/systemctl start can@can0.service, /usr/bin/systemctl stop can@can0.service, /usr/bin/systemctl restart can@can0.service, /usr/bin/systemctl start can@can1.service, /usr/bin/systemctl stop can@can1.service, /usr/bin/systemctl restart can@can1.service

@@ -21,6 +21,7 @@
   import CANConnectionPanel from '$lib/components/CANConnectionPanel.svelte';
   import NetworkScanPanel from '$lib/components/NetworkScanPanel.svelte';
   import CANMonitorPanel from '$lib/components/CANMonitorPanel.svelte';
+  import CANInterfacePanel from '$lib/components/CANInterfacePanel.svelte';
   import ConnectionNotification from '$lib/components/ConnectionNotification.svelte';
   import ECUSelector from '$lib/components/ECUSelector.svelte';
 
@@ -169,6 +170,7 @@
     {:else if currentRoute === 'network'}
       <div class="max-w-5xl mx-auto py-4">
         <h2 class="text-lg font-semibold mb-4">J1939 Network</h2>
+        <CANInterfacePanel />
         <NetworkScanPanel />
         <CANMonitorPanel />
       </div>
