@@ -354,6 +354,11 @@ class CANService:
     # Interface discovery
     # ------------------------------------------------------------------
 
+    # Backends python-can can "detect" but that are not real CAN hardware on
+    # this host (udp_multicast/virtual are always synthesized). Hide them so the
+    # dropdown only offers interfaces a user can actually connect to.
+    _REAL_INTERFACES = {"socketcan", "pcan", "kvaser", "ixxat", "vector", "neovi", "seeedstudio"}
+
     def list_interfaces(self) -> list[Dict[str, Any]]:
         """Return available CAN interfaces detected on this host."""
         results: list[Dict[str, Any]] = []
@@ -361,11 +366,14 @@ class CANService:
             import can
             configs = can.detect_available_configs()
             for cfg in configs:
+                iface = cfg.get("interface", "")
+                if iface not in self._REAL_INTERFACES:
+                    continue
                 results.append({
-                    "interface": cfg.get("interface", ""),
+                    "interface": iface,
                     "channel": cfg.get("channel", ""),
                     "bitrate": cfg.get("bitrate", 250000),
-                    "description": f"{cfg.get('interface', '')} — {cfg.get('channel', '')}",
+                    "description": f"{iface} — {cfg.get('channel', '')}",
                 })
         except Exception as e:
             logger.warning(f"can.detect_available_configs() failed: {e}")

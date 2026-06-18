@@ -7,6 +7,7 @@
   let selectedInterface = $state<CANInterface | null>(null);
   let bitrate = $state<number>(250000);
   let errorMsg = $state<string | null>(null);
+  let interfaceError = $state<string | null>(null);
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   const canStatus = $derived(deviceStore.canStatus);
@@ -51,6 +52,7 @@
   async function refreshInterfaces() {
     try {
       const list = await apiClient.listCANInterfaces();
+      interfaceError = null;
       interfaces = list;
       // Keep current selection if it still exists; otherwise default to first
       if (selectedInterface && !list.some(i => i.channel === selectedInterface!.channel && i.interface === selectedInterface!.interface)) {
@@ -60,6 +62,10 @@
       }
     } catch (e) {
       console.error('Failed to load CAN interfaces:', e);
+      // Don't silently show "No interfaces found" — that hides a backend/proxy
+      // outage and looks like "no CAN hardware". Surface the real reason.
+      interfaceError = e instanceof Error ? e.message : 'Cannot reach backend';
+      interfaces = [];
     }
   }
 
@@ -124,13 +130,17 @@
       disabled={interfaces.length === 0}
     >
       {#if interfaces.length === 0}
-        <option value={null}>No interfaces found</option>
+        <option value={null}>{interfaceError ? 'Backend unreachable' : 'No interfaces found'}</option>
       {:else}
         {#each interfaces as iface}
           <option value={iface}>{iface.description}</option>
         {/each}
       {/if}
     </select>
+
+    {#if interfaceError}
+      <span class="text-xs text-red-400" title={interfaceError}>⚠ Cannot load interfaces: {interfaceError}</span>
+    {/if}
 
     <input
       type="number"
