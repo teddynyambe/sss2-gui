@@ -30,19 +30,20 @@ npm run format     # prettier --write
 ```
 There is **no frontend test runner**; `npm run build` succeeding is the bar (per [.cursorrules](.cursorrules)).
 
-### Deployment (Raspberry Pi, two services)
+### Deployment (Raspberry Pi, single service)
 
-Production runs **two systemd services**: `sss2-backend` (FastAPI/uvicorn, `app-ui`) and `sss2-frontend` (the Svelte UI built with `@sveltejs/adapter-node` and run via `node build`). The UI is **built on the Pi**, not pre-baked. Code flows dev → GitHub → Pi:
+Production runs **one systemd service**, `sss2-backend` (FastAPI/uvicorn, `app-ui`), which serves **both** the API (`/api`) and the built UI (`/`) on port 8000. The UI is built with `@sveltejs/adapter-static` into a client-rendered SPA, then copied into `app-ui/static/ui/`. Because UI and API share one origin, the relative `VITE_API_BASE=/api` default just works — no node server, reverse proxy, or CORS. Code flows dev → GitHub → Pi:
 
 ```bash
-./scripts/deploy.sh "message"   # on dev/Mac: commit + push to the 'org' remote (SystemsCyber/sss2-gui-v2)
-./scripts/deploy-pi.sh          # on the Pi: git pull -> pip install + restart backend -> npm build + restart frontend
+./scripts/deploy.sh "message"   # on dev/Mac: commit + push to the 'org' remote (SystemsCyber/SSS2-GUI)
+./scripts/deploy-pi.sh          # on the Pi: git pull -> npm build + copy to static/ui -> pip install -> restart backend
 ```
 
-- Unit files live in [scripts/systemd/](scripts/systemd/); edit `User=`/paths/`PORT` per host.
-- The browser→backend URL is baked at build time via `VITE_API_BASE` (default `/api`, assumes a reverse proxy routes `/api` → backend; or set an absolute URL — CORS is enabled in `main.py`). Both REST ([client.ts](ui/src/lib/api/client.ts)) and WebSocket ([wsClient.ts](ui/src/lib/api/wsClient.ts)) honor it; wsClient auto-converts `http(s)`→`ws(s)`.
-- SSR is disabled ([ui/src/routes/+layout.ts](ui/src/routes/+layout.ts)) — the app is a client-rendered SPA served by the node server.
-- `scripts/build-ui.sh` is the **older single-service** approach (build → copy into `app-ui/static/ui/` so FastAPI serves the UI). FastAPI's static mount in `main.py` still works as a fallback, but the two-service scripts above are the current path.
+- Backend unit file: [scripts/systemd/sss2-backend.service](scripts/systemd/sss2-backend.service) (edit `User=`/paths per host).
+- FastAPI's catch-all in [main.py](app-ui/main.py) serves `static/ui/` files (`index.html`, `_app/*`) and falls back to `index.html` for client-side routes.
+- SSR is disabled ([ui/src/routes/+layout.ts](ui/src/routes/+layout.ts)) — required for the static SPA build.
+- `scripts/build-ui.sh` does the local equivalent (build → copy into `app-ui/static/ui/`).
+- Note: `client.ts`/`wsClient.ts` still support an absolute `VITE_API_BASE`, but the wsClient path-composition assumes the relative default — keep `/api` unless you also fix that.
 
 ## Backend architecture
 
