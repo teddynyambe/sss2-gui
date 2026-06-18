@@ -55,9 +55,11 @@ sed -i "s/^student /$APP_USER /" /etc/sudoers.d/sss2-can
 visudo -cf /etc/sudoers.d/sss2-can
 
 # 5) Install systemd units, substituting ROOT/USER/UID --------------------------
-install_unit() {  # <src> <dest>
+install_unit() {  # <src> <dest> — rewrite repo path + user for this host, either convention
   sed -e "s#/var/www/sss2-gui-v2#$ROOT#g" \
-      -e "s/^User=student/User=$APP_USER/" \
+      -e "s#/home/pi/sss2-gui-v2#$ROOT#g" \
+      -e "s/^User=student\$/User=$APP_USER/" \
+      -e "s/^User=pi\$/User=$APP_USER/" \
       -e "s#/home/student#/home/$APP_USER#g" \
       -e "s#/run/user/%U#/run/user/$APP_UID#g" \
       "$1" > "$2"

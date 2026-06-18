@@ -1,9 +1,10 @@
-# SSS2-GUI FastAPI backend (app-ui).
-# Install:
+# SSS2-GUI FastAPI backend (app-ui) — serves the API and the built UI on :8000.
+# scripts/setup-appliance.sh installs this and substitutes the repo path + user.
+# To install by hand, edit User= and the two paths to match your Pi, then:
 #   sudo cp scripts/systemd/sss2-backend.service /etc/systemd/system/
-#   sudo systemctl daemon-reload
-#   sudo systemctl enable --now sss2-backend.service
-# Edit User= and the paths below to match your Pi (clone location, username).
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sss2-backend.service
+# NOTE: the values below (User=student, /var/www/sss2-gui-v2) are the substitution
+# template — keep this format so setup-appliance.sh's sed can rewrite them.
 
 [Unit]
 Description=SSS2-GUI FastAPI backend (app-ui)
@@ -12,9 +13,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/sss2-gui-v2/app-ui
-ExecStart=/home/pi/sss2-gui-v2/app-ui/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+User=student
+WorkingDirectory=/var/www/sss2-gui-v2/app-ui
+ExecStart=/var/www/sss2-gui-v2/app-ui/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 # Configure the SSS2 CAN channel here if it differs from the defaults in core/config.py:
 # Environment=CAN_CHANNEL=can0
 # Environment=CAN_BITRATE=250000
