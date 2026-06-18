@@ -6,8 +6,8 @@
 # serves BOTH the API (/api) and the UI (/) on port 8000. No node server, no proxy.
 #
 # First-time setup on the Pi:
-#   git clone https://github.com/SystemsCyber/SSS2-GUI.git
-#   cd SSS2-GUI && git switch New-Gui-CAN
+#   git clone https://github.com/teddynyambe/sss2-gui.git
+#   cd sss2-gui && git switch sss2_can_enabled
 #   python3 -m venv app-ui/venv
 #   sudo cp scripts/systemd/sss2-backend.service /etc/systemd/system/   # edit User=/paths first
 #   sudo systemctl daemon-reload && sudo systemctl enable sss2-backend.service
@@ -16,8 +16,10 @@
 set -euo pipefail
 
 # ===== Config (override via env if your names/paths differ) =====
-REMOTE="${REMOTE:-origin}"                       # remote that points at the GitHub repo
-BRANCH="${BRANCH:-New-Gui-CAN}"
+# Deploys whatever branch is currently checked out on the Pi, from its remote.
+# Override either with env vars, e.g.  BRANCH=main REMOTE=org ./scripts/deploy-pi.sh
+REMOTE="${REMOTE:-origin}"                               # remote to pull from
+BRANCH="${BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"   # default: current branch
 BACKEND_SERVICE="${BACKEND_SERVICE:-sss2-backend.service}"
 
 # The UI talks to the backend on the SAME origin (FastAPI serves both), so the
