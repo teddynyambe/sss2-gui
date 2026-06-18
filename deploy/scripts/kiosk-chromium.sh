@@ -3,9 +3,23 @@
 # Runs Chromium full-screen, no chrome, pointed at the launcher page.
 set -u
 
+# Per-host overrides (rotation, launcher path, etc.) — optional.
+[ -r /etc/default/sss2-kiosk ] && . /etc/default/sss2-kiosk
+
 # The launcher (file://) gates on backend health, then hands off to the app.
 LAUNCHER="${KIOSK_LAUNCHER:-/var/www/sss2-gui-v2/deploy/kiosk/launcher.html}"
 URL="file://${LAUNCHER}"
+
+# --- Display + touch rotation --------------------------------------------------
+# Runs inside the cage Wayland session, so wlr-randr can talk to it. wlroots maps
+# touch input onto the rotated output automatically, keeping taps aligned.
+#   KIOSK_ROTATE = normal | 90 | 180 | 270   (set in /etc/default/sss2-kiosk;
+#   if the picture is rotated the WRONG way, swap 90 <-> 270)
+ROTATE="${KIOSK_ROTATE:-90}"
+if [ "$ROTATE" != "normal" ] && command -v wlr-randr >/dev/null 2>&1; then
+  OUT="$(wlr-randr 2>/dev/null | awk 'NR==1{print $1; exit}')"
+  [ -n "$OUT" ] && wlr-randr --output "$OUT" --transform "$ROTATE" || true
+fi
 
 # Dedicated profile so we can scrub crash flags (prevents the "restore pages"
 # bar after an unclean shutdown/power loss).

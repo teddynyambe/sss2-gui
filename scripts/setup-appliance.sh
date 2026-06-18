@@ -33,10 +33,10 @@ echo "=============================================="
 echo "==> Installing packages (cage, chromium, can-utils, curl, node, python venv)..."
 apt-get update -y
 apt-get install -y --no-install-recommends \
-  cage chromium-browser can-utils curl \
+  cage wlr-randr chromium-browser can-utils curl \
   python3-venv nodejs npm || \
 apt-get install -y --no-install-recommends \
-  cage chromium can-utils curl python3-venv nodejs npm
+  cage wlr-randr chromium can-utils curl python3-venv nodejs npm
 
 # 2) Seat/GPU/input group access for the kiosk user -----------------------------
 echo "==> Adding $APP_USER to video, render, input, tty, seat groups..."
