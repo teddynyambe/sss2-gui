@@ -71,3 +71,6 @@ console-sss2/
 
 # Office temp/lock files
 ~$*
+
+# Proprietary J1939 Digital Annex spreadsheet — copied to production manually, never on GitHub
+app-ui/j1939da/*.xlsx
