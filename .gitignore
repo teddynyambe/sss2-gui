@@ -68,3 +68,6 @@ app-ui/store/data/snapshots/*.json
 
 # Exclude the console-sss2
 console-sss2/
+
+# Office temp/lock files
+~$*
