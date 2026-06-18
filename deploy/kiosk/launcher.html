@@ -36,19 +36,32 @@
     const title = document.getElementById('title');
     let fails = 0;
 
-    async function tick() {
+    // Probe with mode:'no-cors' — this page is loaded from file:// (origin "null"),
+    // so a normal cross-origin fetch to http://localhost:8000 is CORS-blocked even
+    // though the server answers. no-cors returns an opaque response we can't read,
+    // but it still RESOLVES when the server is reachable and REJECTS when it isn't —
+    // which is all the gate needs. Once reachable we hand off to the same-origin app.
+    async function reachable() {
       try {
-        const r = await fetch(HEALTH, { cache: 'no-store' });
-        if (r.ok) { msg.textContent = 'Backend ready — loading…'; location.href = APP_URL; return; }
-        throw new Error('status ' + r.status);
-      } catch (e) {
-        fails++;
-        // First couple of failures: assume the backend is still booting.
-        if (fails > 3) {
-          wrap.classList.add('err');
-          title.textContent = 'Backend Disconnected';
-          msg.textContent = 'Waiting for the SSS2 service to start… (retrying)';
-        }
+        await fetch(HEALTH, { mode: 'no-cors', cache: 'no-store' });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async function tick() {
+      if (await reachable()) {
+        msg.textContent = 'Backend ready — loading…';
+        location.href = APP_URL;
+        return;
+      }
+      fails++;
+      // First couple of failures: assume the backend is still booting.
+      if (fails > 3) {
+        wrap.classList.add('err');
+        title.textContent = 'Backend Disconnected';
+        msg.textContent = 'Waiting for the SSS2 service to start… (retrying)';
       }
       setTimeout(tick, 2000);
     }
