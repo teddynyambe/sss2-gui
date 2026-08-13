@@ -29,8 +29,9 @@
     // It polls the backend health endpoint and, once healthy, hands off to the app.
     // While the backend is down it shows a "Backend Disconnected" screen instead of
     // Chromium's raw connection-refused error — and keeps retrying forever.
-    const APP_URL = 'http://localhost:8000/';
-    const HEALTH  = 'http://localhost:8000/api/health';
+    // 127.0.0.1 (not "localhost") avoids any IPv4/IPv6 resolution ambiguity.
+    const APP_URL = 'http://127.0.0.1:8000/';
+    const HEALTH  = 'http://127.0.0.1:8000/api/health';
     const wrap = document.getElementById('wrap');
     const msg  = document.getElementById('msg');
     const title = document.getElementById('title');
@@ -53,7 +54,8 @@
     async function tick() {
       if (await reachable()) {
         msg.textContent = 'Backend ready — loading…';
-        location.href = APP_URL;
+        // Unique query each launch → the browser can never reuse a cached shell.
+        location.href = APP_URL + '?v=' + Date.now();
         return;
       }
       fails++;

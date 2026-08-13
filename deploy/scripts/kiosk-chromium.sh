@@ -21,14 +21,12 @@ if [ "$ROTATE" != "normal" ] && command -v wlr-randr >/dev/null 2>&1; then
   [ -n "$OUT" ] && wlr-randr --output "$OUT" --transform "$ROTATE" || true
 fi
 
-# Dedicated profile so we can scrub crash flags (prevents the "restore pages"
-# bar after an unclean shutdown/power loss).
+# Start from a CLEAN profile every launch. A kiosk must never serve a stale app
+# shell from browser cache, and nothing in this profile is worth keeping (HTTP
+# cache + crash flags only). This makes "old UI after an update" impossible.
 PROFILE="${HOME}/.config/sss2-kiosk"
+rm -rf "$PROFILE"
 mkdir -p "$PROFILE/Default"
-PREFS="$PROFILE/Default/Preferences"
-if [ -f "$PREFS" ]; then
-  sed -i 's/"exited_cleanly":false/"exited_cleanly":true/; s/"exit_type":"[^"]*"/"exit_type":"Normal"/' "$PREFS" || true
-fi
 
 # Chromium binary differs by image (Raspberry Pi OS = chromium-browser).
 BIN="$(command -v chromium-browser || command -v chromium)"
@@ -36,6 +34,8 @@ BIN="$(command -v chromium-browser || command -v chromium)"
 exec "$BIN" \
   --kiosk "$URL" \
   --user-data-dir="$PROFILE" \
+  --disk-cache-size=1 \
+  --aggressive-cache-discard \
   --ozone-platform=wayland \
   --start-fullscreen \
   --noerrdialogs \
