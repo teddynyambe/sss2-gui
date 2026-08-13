@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from middleware.orchestrator import Orchestrator
 from services.monitor_service import MonitorService
-from routers import health, sss2, catalog, connection, ecu, can, canctl
+from routers import health, sss2, catalog, connection, ecu, can, canctl, system
 
 
 # Configure logging
@@ -116,6 +116,7 @@ app.include_router(health.router, prefix="/api")
 app.include_router(sss2.router, prefix="/api")
 app.include_router(can.router, prefix="/api")
 app.include_router(canctl.router, prefix="/api")
+app.include_router(system.router, prefix="/api")
 app.include_router(catalog.router, prefix="/api")
 app.include_router(connection.router, prefix="/api")
 app.include_router(ecu.router, prefix="/api")

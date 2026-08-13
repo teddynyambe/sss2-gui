@@ -1,0 +1,41 @@
+#!/bin/bash
+# Root-owned privileged helper for the SSS2 kiosk Admin panel.
+#
+# INSTALL (done by scripts/setup-appliance.sh):
+#   sudo install -m 0755 -o root -g root deploy/scripts/sss2-kiosk-admin /usr/local/sbin/sss2-kiosk-admin
+# The sudoers rule (deploy/sudoers/sss2-system) lets the backend user run ONLY this
+# path. It must live at a root-owned, non-user-writable location — do NOT point sudo
+# at the repo copy, or the backend user could rewrite it and escalate.
+#
+# Invoked as:  sudo -n /usr/local/sbin/sss2-kiosk-admin <action>
+set -eu
+
+KIOSK=sss2-kiosk.service
+BACKEND=sss2-backend.service
+
+start_desktop() {
+  systemctl stop "$KIOSK" || true
+  # Prefer a real display manager if one is installed.
+  for dm in lightdm gdm3 gdm sddm; do
+    if systemctl list-unit-files 2>/dev/null | grep -q "^${dm}.service"; then
+      systemctl start "${dm}.service"
+      return 0
+    fi
+  done
+  # No DM present: fall back to a login console so the unit stays usable.
+  systemctl start getty@tty1.service || true
+  echo "No display manager installed; opened a text console instead." >&2
+}
+
+case "${1:-}" in
+  exit-console) systemctl stop "$KIOSK"; systemctl start getty@tty1.service ;;
+  exit-desktop) start_desktop ;;
+  restart-gui)  systemctl restart "$KIOSK" ;;
+  restart-app)  systemctl restart "$BACKEND"; systemctl restart "$KIOSK" ;;
+  reboot)       systemctl reboot ;;
+  shutdown)     systemctl poweroff ;;
+  *)
+    echo "usage: $0 {exit-console|exit-desktop|restart-gui|restart-app|reboot|shutdown}" >&2
+    exit 2
+    ;;
+esac

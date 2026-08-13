@@ -24,10 +24,20 @@
   import CANInterfacePanel from '$lib/components/CANInterfacePanel.svelte';
   import ConnectionNotification from '$lib/components/ConnectionNotification.svelte';
   import ECUSelector from '$lib/components/ECUSelector.svelte';
+  import AdminPanel from '$lib/components/AdminPanel.svelte';
 
   type Route = 'dashboard' | 'settings' | 'network';
 
   let currentRoute = $state<Route>('dashboard');
+  let showAdmin = $state(false);
+
+  // Ctrl+Alt+A opens the admin panel (handy when a keyboard is attached).
+  function onGlobalKey(e: KeyboardEvent) {
+    if (e.ctrlKey && e.altKey && (e.key === 'a' || e.key === 'A')) {
+      e.preventDefault();
+      showAdmin = true;
+    }
+  }
   let unsubscribe: (() => void) | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let showNetworkPanel = $state(false);
@@ -143,6 +153,15 @@
             {item.label}
           </button>
         {/each}
+        <!-- Admin / maintenance (PIN-gated). Deliberately low-key. Ctrl+Alt+A also opens it. -->
+        <button
+          class="ml-1 px-3 py-2 rounded-lg min-h-touch text-lg text-white/70 hover:text-white hover:bg-dark-accent transition-colors"
+          title="Admin / maintenance"
+          aria-label="Admin / maintenance"
+          onclick={() => (showAdmin = true)}
+        >
+          ⚙
+        </button>
       </div>
     </div>
 
@@ -201,4 +220,9 @@
 
   <!-- Connection Notification (toast) -->
   <ConnectionNotification />
+
+  <!-- PIN-gated maintenance / admin panel -->
+  <AdminPanel bind:open={showAdmin} />
 </div>
+
+<svelte:window onkeydown={onGlobalKey} />

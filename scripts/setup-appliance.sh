@@ -47,12 +47,36 @@ done
 # 3) Make repo scripts executable ----------------------------------------------
 chmod +x "$ROOT"/scripts/*.sh "$ROOT"/deploy/scripts/*.sh
 
-# 4) sudoers for UI-driven CAN up/down -----------------------------------------
-echo "==> Installing sudoers rule for CAN control..."
-install -m 0440 "$ROOT/deploy/sudoers/sss2-can" /etc/sudoers.d/sss2-can
-# Adjust the username in the rule if not 'student'
-sed -i "s/^student /$APP_USER /" /etc/sudoers.d/sss2-can
+# 4) sudoers for UI-driven CAN up/down + kiosk admin ---------------------------
+echo "==> Installing sudoers rules (CAN control + admin helper)..."
+install -m 0440 "$ROOT/deploy/sudoers/sss2-can"    /etc/sudoers.d/sss2-can
+install -m 0440 "$ROOT/deploy/sudoers/sss2-system" /etc/sudoers.d/sss2-system
+# Adjust the username in the rules if not 'student'
+sed -i "s/^student /$APP_USER /" /etc/sudoers.d/sss2-can /etc/sudoers.d/sss2-system
 visudo -cf /etc/sudoers.d/sss2-can
+visudo -cf /etc/sudoers.d/sss2-system
+
+# 4b) Root-owned privileged admin helper (NOT the repo copy — repo is user-writable)
+echo "==> Installing root-owned kiosk admin helper..."
+install -m 0755 -o root -g root "$ROOT/deploy/scripts/sss2-kiosk-admin" /usr/local/sbin/sss2-kiosk-admin
+
+# 4c) Host config file: admin PIN + display rotation. Created once; never overwritten.
+if [ ! -f /etc/default/sss2-kiosk ]; then
+  echo "==> Writing /etc/default/sss2-kiosk (CHANGE THE PIN!)..."
+  cat > /etc/default/sss2-kiosk <<'DEFAULTS'
+# SSS2 kiosk host configuration.
+# Display rotation for the touchscreen: normal | 90 | 180 | 270
+KIOSK_ROTATE=90
+# Admin-panel PIN. CHANGE THIS. Empty = admin panel disabled.
+SYSTEM_ADMIN_PIN=246813
+DEFAULTS
+  chmod 0640 /etc/default/sss2-kiosk
+fi
+
+# 4d) Management access: SSH + a spare login console on Ctrl+Alt+F2
+echo "==> Enabling SSH and a console VT (Ctrl+Alt+F2)..."
+systemctl enable --now ssh 2>/dev/null || systemctl enable --now sshd 2>/dev/null || true
+systemctl enable getty@tty2.service 2>/dev/null || true
 
 # 5) Install systemd units, substituting ROOT/USER/UID --------------------------
 install_unit() {  # <src> <dest> — rewrite repo path + user for this host, either convention

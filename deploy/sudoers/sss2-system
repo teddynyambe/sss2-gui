@@ -1,0 +1,6 @@
+# Let the SSS2 backend (user 'student') run ONLY the root-owned kiosk admin helper.
+# The helper itself validates the action, so this single entry covers exit-to-
+# console/desktop, restart, reboot, and shutdown without granting broad root.
+# Install:  sudo install -m 0440 deploy/sudoers/sss2-system /etc/sudoers.d/sss2-system
+# Validate: sudo visudo -cf /etc/sudoers.d/sss2-system
+student ALL=(root) NOPASSWD: /usr/local/sbin/sss2-kiosk-admin

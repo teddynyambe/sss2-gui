@@ -124,6 +124,33 @@ ip -details link show can0                           # UP + bitrate
 | "Backend Disconnected" forever | `journalctl -u sss2-backend -b`; did `deploy-pi.sh` build the UI into `app-ui/static/ui/`? |
 | Chromium "restore pages" bar | handled by the profile scrub in `kiosk-chromium.sh`; clear `~/.config/sss2-kiosk` if it persists |
 
+## Maintenance / getting out of the kiosk
+
+The kiosk is a deliberate lock, with three ways out:
+
+1. **On-screen Admin panel (PIN-gated).** Tap the **⚙** in the header (or press
+   **Ctrl+Alt+A**), enter the admin PIN, then pick: Exit to Desktop, Exit to
+   Console, Update & Restart, Restart GUI, Restart App, Reboot, Shut Down. Each
+   destructive action asks for confirmation.
+2. **Keyboard console:** **Ctrl+Alt+F2** switches to a login VT (the kiosk stays on
+   tty1). Log in and run anything; **Ctrl+Alt+F1** returns to the kiosk.
+3. **SSH** (enabled by setup): `sudo systemctl stop sss2-kiosk` → shell;
+   `./scripts/deploy-pi.sh` to update; `sudo systemctl start sss2-kiosk` to return.
+
+**Set the PIN** — edit `/etc/default/sss2-kiosk` (`SYSTEM_ADMIN_PIN=...`) and
+`sudo systemctl restart sss2-backend`. An empty PIN disables the panel (fail-closed).
+
+**How it stays safe:** the backend never holds broad root. Every privileged action
+goes through one **root-owned** helper, `/usr/local/sbin/sss2-kiosk-admin`, allowed
+by a single narrow sudoers rule ([deploy/sudoers/sss2-system](../deploy/sudoers/sss2-system)).
+The API is on the LAN, so the PIN is required on every call. "Update & Restart" runs
+[deploy/scripts/kiosk-update.sh](../deploy/scripts/kiosk-update.sh) detached (logs to
+`/tmp/sss2-kiosk-update.log`) so it survives the restart it triggers.
+
+> "Exit to Desktop" starts a display manager (lightdm/gdm/sddm) if one is installed;
+> if the appliance is console-only it opens a login console instead. To return to the
+> kiosk from the desktop/console: `sudo systemctl start sss2-kiosk`.
+
 ## Production notes
 
 This appliance has **no authentication** and commands real hardware. Keep it on an

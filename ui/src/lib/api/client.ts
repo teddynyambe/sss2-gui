@@ -298,6 +298,22 @@ class ApiClient {
   async canInterfaceDown(iface: string): Promise<IfaceActionResponse> {
     return this.request<IfaceActionResponse>(`/canctl/${iface}/down`, { method: 'POST' });
   }
+
+  // ---------- System / kiosk admin (PIN-gated) ----------
+
+  async getSystemStatus(): Promise<{ admin_enabled: boolean }> {
+    return this.request('/system/status');
+  }
+
+  async systemAction(
+    action: 'exit-console' | 'exit-desktop' | 'restart-gui' | 'restart-app' | 'reboot' | 'shutdown' | 'update',
+    pin: string,
+  ): Promise<{ ok: boolean; action: string; detached: boolean }> {
+    return this.request('/system/action', {
+      method: 'POST',
+      body: JSON.stringify({ action, pin }),
+    });
+  }
 }
 
 export const apiClient = new ApiClient();
