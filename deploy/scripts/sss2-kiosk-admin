@@ -27,15 +27,21 @@ start_desktop() {
   echo "No display manager installed; opened a text console instead." >&2
 }
 
+stop_desktop() {
+  # Free the seat from any running display manager / console before the kiosk grabs it.
+  for dm in lightdm gdm3 gdm sddm; do systemctl stop "${dm}.service" 2>/dev/null || true; done
+}
+
 case "${1:-}" in
   exit-console) systemctl stop "$KIOSK"; systemctl start getty@tty1.service ;;
   exit-desktop) start_desktop ;;
+  to-kiosk)     stop_desktop; systemctl start "$KIOSK" ;;
   restart-gui)  systemctl restart "$KIOSK" ;;
   restart-app)  systemctl restart "$BACKEND"; systemctl restart "$KIOSK" ;;
   reboot)       systemctl reboot ;;
   shutdown)     systemctl poweroff ;;
   *)
-    echo "usage: $0 {exit-console|exit-desktop|restart-gui|restart-app|reboot|shutdown}" >&2
+    echo "usage: $0 {exit-console|exit-desktop|to-kiosk|restart-gui|restart-app|reboot|shutdown}" >&2
     exit 2
     ;;
 esac

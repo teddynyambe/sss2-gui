@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Return to SSS2 Kiosk
+Comment=Switch back to the SSS2 touchscreen kiosk
+Exec=/usr/local/bin/kiosk
+Icon=video-display
+Terminal=false
+Categories=Utility;System;

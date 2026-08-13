@@ -65,6 +65,16 @@ echo "==> Installing 'kiosk' shortcut + console hint..."
 install -m 0755 -o root -g root "$ROOT/deploy/scripts/kiosk"           /usr/local/bin/kiosk
 install -m 0644             "$ROOT/deploy/profile.d/sss2-kiosk-hint.sh" /etc/profile.d/sss2-kiosk-hint.sh
 
+# 4b-3) Desktop launcher: app menu + an icon on the user's Desktop
+echo "==> Installing 'Return to Kiosk' desktop launcher..."
+install -m 0644 "$ROOT/deploy/desktop/return-to-kiosk.desktop" /usr/share/applications/return-to-kiosk.desktop
+DESKTOP_DIR="/home/$APP_USER/Desktop"
+mkdir -p "$DESKTOP_DIR"
+install -m 0755 -o "$APP_USER" -g "$APP_USER" \
+  "$ROOT/deploy/desktop/return-to-kiosk.desktop" "$DESKTOP_DIR/return-to-kiosk.desktop"
+# Mark trusted so file managers launch it without the "untrusted" prompt (best-effort)
+sudo -u "$APP_USER" gio set "$DESKTOP_DIR/return-to-kiosk.desktop" metadata::trusted true 2>/dev/null || true
+
 # 4c) Host config file: admin PIN + display rotation. Created once; never overwritten.
 if [ ! -f /etc/default/sss2-kiosk ]; then
   echo "==> Writing /etc/default/sss2-kiosk (CHANGE THE PIN!)..."
