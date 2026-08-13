@@ -133,16 +133,22 @@ if static_ui_path.exists():
 
     # SPA catch-all: serve any built file (index.html, _app/*, favicon, ...) and fall
     # back to index.html for client-side routes. Registered whenever the UI is present.
+    # index.html must always revalidate so a new build shows up immediately;
+    # SvelteKit's _app/* assets are content-hashed, so they stay cacheable.
+    _NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+
     @app.get("/{full_path:path}")
     async def serve_ui(full_path: str):
         if full_path.startswith("api"):
             return None
         file_path = static_ui_path / full_path
         if file_path.is_file():
+            if file_path.name == "index.html":
+                return FileResponse(file_path, headers=_NO_CACHE)
             return FileResponse(file_path)
         index_path = static_ui_path / "index.html"
         if index_path.exists():
-            return FileResponse(index_path)
+            return FileResponse(index_path, headers=_NO_CACHE)
         return {"error": "UI not found. Build it (npm run build in ui/) and copy ui/build/* to app-ui/static/ui/."}
 
 
