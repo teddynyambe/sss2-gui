@@ -60,6 +60,11 @@ visudo -cf /etc/sudoers.d/sss2-system
 echo "==> Installing root-owned kiosk admin helper..."
 install -m 0755 -o root -g root "$ROOT/deploy/scripts/sss2-kiosk-admin" /usr/local/sbin/sss2-kiosk-admin
 
+# 4b-2) 'kiosk' shortcut + console login banner (how to get back to the kiosk)
+echo "==> Installing 'kiosk' shortcut + console hint..."
+install -m 0755 -o root -g root "$ROOT/deploy/scripts/kiosk"           /usr/local/bin/kiosk
+install -m 0644             "$ROOT/deploy/profile.d/sss2-kiosk-hint.sh" /etc/profile.d/sss2-kiosk-hint.sh
+
 # 4c) Host config file: admin PIN + display rotation. Created once; never overwritten.
 if [ ! -f /etc/default/sss2-kiosk ]; then
   echo "==> Writing /etc/default/sss2-kiosk (CHANGE THE PIN!)..."

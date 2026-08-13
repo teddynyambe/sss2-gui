@@ -1,0 +1,6 @@
+#!/bin/bash
+# 'kiosk' — return to the SSS2 touchscreen kiosk from a console/desktop session.
+# Installed to /usr/local/bin/kiosk by scripts/setup-appliance.sh.
+echo "Starting the SSS2 kiosk…"
+# Prefer the passwordless admin helper; fall back to a direct (sudo-prompted) start.
+sudo -n /usr/local/sbin/sss2-kiosk-admin restart-gui 2>/dev/null || sudo systemctl start sss2-kiosk
