@@ -100,12 +100,15 @@
 {#if open}
   <!-- Overlay -->
   <div
-    class="fixed inset-0 z-[200] bg-black/70 flex items-center justify-center p-4"
+    class="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
     role="dialog"
     aria-modal="true"
     aria-label="Admin panel"
   >
-    <div class="w-full max-w-md bg-dark-card rounded-xl shadow-2xl border border-gray-700 overflow-hidden">
+    <div
+      class="w-full max-w-md rounded-xl shadow-2xl border border-gray-600 overflow-hidden"
+      style="background-color: #16213e;"
+    >
       <div class="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-[#0a2338]">
         <h2 class="text-base font-semibold">Maintenance / Admin</h2>
         <button class="text-gray-400 hover:text-white text-xl leading-none min-h-touch px-2" onclick={close}>✕</button>
