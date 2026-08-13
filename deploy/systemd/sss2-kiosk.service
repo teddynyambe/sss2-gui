@@ -1,0 +1,42 @@
+# Full-screen Chromium kiosk via the `cage` Wayland compositor.
+# Hidden chrome, no desktop, auto-restart, waits for the backend first.
+# Install path assumed: /var/www/sss2-gui-v2  (edit if different).
+#
+#   sudo cp deploy/systemd/sss2-kiosk.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable sss2-kiosk.service
+#
+# Requires: cage, chromium-browser; user 'student' in groups video,render,input,tty,seat.
+
+[Unit]
+Description=SSS2 Chromium kiosk (cage)
+After=systemd-user-sessions.service sss2-backend.service
+Wants=sss2-backend.service
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+
+[Service]
+Type=simple
+User=student
+PAMName=login
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+# logind seat/session so cage can grab the GPU + input without a desktop
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=XDG_SESSION_TYPE=wayland
+Environment=HOME=/home/student
+
+# Don't open the browser until the app can actually be served
+ExecStartPre=/var/www/sss2-gui-v2/deploy/scripts/wait-for-backend.sh
+# cage runs a single app full-screen; -s prevents the cursor/idle issues on touch
+ExecStart=/usr/bin/cage -s -- /var/www/sss2-gui-v2/deploy/scripts/kiosk-chromium.sh
+
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

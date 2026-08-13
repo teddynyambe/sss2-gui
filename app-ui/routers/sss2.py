@@ -59,7 +59,7 @@ def _settings_to_state(settings: dict[int, int], sss2_sa: int) -> dict[str, Any]
       25-32 → potentiometer power group voltage setting
       33-36 → PWM duty cycles
       50    → ignition relay
-      51-66 → potentiometer terminal connection modes (enabled flag)
+      51-66 → potentiometer terminal connection modes (tcon 0-7)
     """
     pots: dict[str, Any] = {}
     power_groups: dict[str, Any] = {}
@@ -68,7 +68,7 @@ def _settings_to_state(settings: dict[int, int], sss2_sa: int) -> dict[str, Any]
     for i in range(1, 17):
         pot_id = f"po{i}"
         wiper = settings.get(i, 0)
-        pots[pot_id] = {"wiper_position": wiper, "voltage": 0.0, "enabled": False}
+        pots[pot_id] = {"wiper_position": wiper, "voltage": 0.0, "tcon": 3}
 
     # Potentiometer power groups (settings 25-32 → groups 1-8)
     for i in range(25, 33):
@@ -90,12 +90,12 @@ def _settings_to_state(settings: dict[int, int], sss2_sa: int) -> dict[str, Any]
             wiper = pots[pot_id]["wiper_position"]
             pots[pot_id]["voltage"] = (wiper / 255.0) * max_v
 
-    # Enabled state from terminal connection modes (settings 51-66)
+    # Terminal connection modes (settings 51-66) — TCON value 0-7
     for i in range(51, 67):
         port = i - 50  # 51→1, …, 66→16
         pot_id = f"po{port}"
         mode_val = settings.get(i, 3)
-        pots[pot_id]["enabled"] = mode_val == 7
+        pots[pot_id]["tcon"] = mode_val
 
     ignition = bool(settings.get(50, 0))
 

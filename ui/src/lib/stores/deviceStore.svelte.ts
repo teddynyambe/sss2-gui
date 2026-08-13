@@ -8,11 +8,13 @@ export interface ECUFrame {
   pgn: string;
   sa: string;
   data: string;
+  _seq?: number;
 }
 
 export interface SPNValue {
   spn: number;
   pgn: string;       // hex PGN as sent by backend e.g. "0F004"
+  arb_id: string;    // full 29-bit CAN arb ID hex e.g. "0CFE6CEE"
   label: string;
   value: number;
   unit: string;
@@ -45,6 +47,8 @@ const defaultCANStatus: CANStatusState = {
   address_claimed: false,
   state: 'disconnected',
 };
+
+let _frameSeq = 0;
 
 class DeviceStore {
   // Device state (populated via GET_ALL_SETTINGS after selecting an SSS2 node)
@@ -81,6 +85,13 @@ class DeviceStore {
 
   // Potentiometers pinned to Dashboard (plain object for reliable Svelte 5 reactivity)
   pinnedPotIds = $state<Record<string, true>>({});
+
+  // Correlation state — tracks which pots are being monitored and which CAN frames changed
+  monitoredPots = $state<Set<string>>(new Set());
+  correlatedFrames = $state<Record<string, number[]>>({});  // arb_id → changed byte indices
+  _correlationSnapshot: Record<string, string> = {};        // arb_id → data at snapshot time
+  _correlationActive = false;
+  _correlationTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Derived
   ignitionState = $derived(this.deviceState?.ignition ?? false);
@@ -277,6 +288,7 @@ export function addECUFrame(frame: ECUFrame): void {
 }
 
 export function addFrameForChannel(channel: string, frame: ECUFrame): void {
+  frame._seq = ++_frameSeq;
   const existing = store.framesByChannel[channel] ?? [];
   store.framesByChannel = {
     ...store.framesByChannel,
@@ -284,6 +296,25 @@ export function addFrameForChannel(channel: string, frame: ECUFrame): void {
   };
   // Also maintain the legacy combined buffer
   store.ecuFrames = [frame, ...store.ecuFrames].slice(0, 200);
+
+  // Correlation diff — compare incoming frame against snapshot
+  if (store._correlationActive) {
+    const before = store._correlationSnapshot[frame.arb_id];
+    if (before && before !== frame.data) {
+      const bBytes = before.match(/.{2}/g) ?? [];
+      const aBytes = frame.data.match(/.{2}/g) ?? [];
+      const changed: number[] = [];
+      for (let i = 0; i < Math.max(bBytes.length, aBytes.length); i++) {
+        if (bBytes[i] !== aBytes[i]) changed.push(i);
+      }
+      if (changed.length) {
+        store.correlatedFrames = {
+          ...store.correlatedFrames,
+          [frame.arb_id]: changed,
+        };
+      }
+    }
+  }
 }
 
 export function updateSPNsForChannel(channel: string, updates: Record<string, SPNValue>): void {
@@ -332,10 +363,63 @@ export function togglePinnedPot(id: string): void {
   }
 }
 
+// ---------- Pot Correlation ----------
+
+export function togglePotMonitoring(potId: string): void {
+  const next = new Set(store.monitoredPots);
+  next.has(potId) ? next.delete(potId) : next.add(potId);
+  store.monitoredPots = next;
+  if (!next.has(potId)) {
+    // Pot disabled — clear any highlights it left
+    store.correlatedFrames = {};
+  }
+}
+
+export function startCorrelation(): void {
+  // Snapshot the latest data byte string for every arb_id seen so far
+  store._correlationSnapshot = {};
+  for (const frames of Object.values(store.framesByChannel)) {
+    const seen = new Set<string>();
+    for (const frame of frames) {  // frames are newest-first
+      if (!seen.has(frame.arb_id)) {
+        store._correlationSnapshot[frame.arb_id] = frame.data;
+        seen.add(frame.arb_id);
+      }
+    }
+  }
+  store._correlationActive = true;
+  store.correlatedFrames = {};  // clear previous highlights
+  if (store._correlationTimer) clearTimeout(store._correlationTimer);
+  // Auto-expire correlation window after 5 s
+  store._correlationTimer = setTimeout(() => {
+    store._correlationActive = false;
+  }, 5000);
+}
+
+export function clearCorrelation(): void {
+  store._correlationActive = false;
+  store.correlatedFrames = {};
+  store._correlationSnapshot = {};
+}
+
 export function setMonitoredECU(sa: number | null): void {
   store.monitoredECUSA = sa;
   store.spnValues = {};
   store.unknownFrames = {};
+  if (typeof window !== 'undefined') {
+    if (sa !== null) localStorage.setItem('monitoredECUSA', sa.toString());
+    else localStorage.removeItem('monitoredECUSA');
+  }
+}
+
+export function loadMonitoredECUFromStorage(): void {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('monitoredECUSA');
+    if (stored !== null) {
+      const sa = parseInt(stored, 10);
+      if (!isNaN(sa)) store.monitoredECUSA = sa;
+    }
+  }
 }
 
 export function updateSPNValues(updates: Record<string, SPNValue>): void {

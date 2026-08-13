@@ -1,0 +1,27 @@
+# Templated SocketCAN bring-up: `can@can0`, `can@can1`.
+#   Boot:  systemctl enable can@can0 can@can1   (start automatically)
+#   UI:    sudo systemctl start|stop can@can0    (driven by routers/canctl.py)
+#
+# Bitrate defaults to 250000 (J1939). Override per-interface by creating
+#   /etc/default/can@can0   with:  BITRATE=500000
+#
+# %i is the interface name (can0/can1). The MCP2515 device-tree overlays in
+# /boot/firmware/config.txt must be present so the interface exists at boot —
+# BindsTo waits for the kernel netdev to appear before bringing the link up.
+
+[Unit]
+Description=Bring up SocketCAN interface %i
+BindsTo=sys-subsystem-net-devices-%i.device
+After=sys-subsystem-net-devices-%i.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=BITRATE=250000
+EnvironmentFile=-/etc/default/can@%i
+ExecStart=/usr/sbin/ip link set %i type can bitrate ${BITRATE}
+ExecStart=/usr/sbin/ip link set %i up
+ExecStop=/usr/sbin/ip link set %i down
+
+[Install]
+WantedBy=multi-user.target

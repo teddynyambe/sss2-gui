@@ -9,7 +9,8 @@ npm run build
 
 echo "Copying build output to app-ui/static/ui/..."
 cd ..
+mkdir -p app-ui/static/ui
 rm -rf app-ui/static/ui/*
-cp -r ui/dist/* app-ui/static/ui/
+cp -r ui/build/* app-ui/static/ui/
 
 echo "Build complete! UI files are in app-ui/static/ui/"

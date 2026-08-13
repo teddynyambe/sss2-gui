@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>SSS2 — Starting…</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #0a1f12; color: #e6f0e6;
+      font-family: system-ui, sans-serif; cursor: none; }
+    .wrap { height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 1.5rem; text-align: center; }
+    h1 { font-size: 1.6rem; font-weight: 600; margin: 0; }
+    p  { margin: 0; color: #9fb3a4; }
+    .spinner { width: 56px; height: 56px; border: 5px solid #1c3a28;
+      border-top-color: #36c46a; border-radius: 50%; animation: spin 1s linear infinite; }
+    .err .spinner { border-top-color: #e05252; }
+    .err h1 { color: #ff8a8a; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="wrap">
+    <div class="spinner"></div>
+    <h1 id="title">Smart Sensor Simulation 2</h1>
+    <p id="msg">Connecting to backend…</p>
+  </div>
+  <script>
+    // The kiosk opens THIS file (a local file://, independent of the backend).
+    // It polls the backend health endpoint and, once healthy, hands off to the app.
+    // While the backend is down it shows a "Backend Disconnected" screen instead of
+    // Chromium's raw connection-refused error — and keeps retrying forever.
+    const APP_URL = 'http://localhost:8000/';
+    const HEALTH  = 'http://localhost:8000/api/health';
+    const wrap = document.getElementById('wrap');
+    const msg  = document.getElementById('msg');
+    const title = document.getElementById('title');
+    let fails = 0;
+
+    // Probe with mode:'no-cors' — this page is loaded from file:// (origin "null"),
+    // so a normal cross-origin fetch to http://localhost:8000 is CORS-blocked even
+    // though the server answers. no-cors returns an opaque response we can't read,
+    // but it still RESOLVES when the server is reachable and REJECTS when it isn't —
+    // which is all the gate needs. Once reachable we hand off to the same-origin app.
+    async function reachable() {
+      try {
+        await fetch(HEALTH, { mode: 'no-cors', cache: 'no-store' });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async function tick() {
+      if (await reachable()) {
+        msg.textContent = 'Backend ready — loading…';
+        location.href = APP_URL;
+        return;
+      }
+      fails++;
+      // First couple of failures: assume the backend is still booting.
+      if (fails > 3) {
+        wrap.classList.add('err');
+        title.textContent = 'Backend Disconnected';
+        msg.textContent = 'Waiting for the SSS2 service to start… (retrying)';
+      }
+      setTimeout(tick, 2000);
+    }
+    tick();
+  </script>
+</body>
+</html>

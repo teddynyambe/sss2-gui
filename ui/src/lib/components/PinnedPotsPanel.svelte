@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
-  import { deviceStore, updateState, togglePinnedPot } from '$lib/stores/deviceStore.svelte';
+  import { deviceStore, updateState, togglePinnedPot, togglePotMonitoring, startCorrelation } from '$lib/stores/deviceStore.svelte';
   import type { PotentiometerDefinition, PotentiometerState } from '$lib/api/client';
 
   const pinnedPotIds = $derived(deviceStore.pinnedPotIds);
@@ -11,7 +10,8 @@
 
   let collapsed = $state(false);
   let localWipers = $state<Record<string, number>>({});
-  const debounceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+  const inflightPots: Record<string, boolean> = {};
+  const pendingWipers: Record<string, number> = {};
 
   function potState(id: string): PotentiometerState | undefined {
     return deviceStore.deviceState?.potentiometers?.[id] as PotentiometerState | undefined;
@@ -38,35 +38,46 @@
     return v.toFixed(2) + 'V';
   }
 
+  async function sendWiperUpdate(pot: PotentiometerDefinition, raw: number) {
+    if (inflightPots[pot.id]) {
+      pendingWipers[pot.id] = raw;
+      return;
+    }
+    const s = potState(pot.id);
+    if (!s) return;
+    inflightPots[pot.id] = true;
+    const maxV = maxVoltage(pot.port);
+    try {
+      await updateState({
+        potentiometers: { [pot.id]: { ...s, wiper_position: raw, voltage: (raw / 255) * maxV } }
+      });
+      const { [pot.id]: _, ...rest } = localWipers;
+      localWipers = rest;
+    } catch { /* ignore */ }
+    inflightPots[pot.id] = false;
+    if (pendingWipers[pot.id] !== undefined) {
+      const next = pendingWipers[pot.id];
+      delete pendingWipers[pot.id];
+      sendWiperUpdate(pot, next);
+    }
+  }
+
   function handleSlider(pot: PotentiometerDefinition, raw: number) {
     const s = potState(pot.id);
     if (!s) return;
     localWipers = { ...localWipers, [pot.id]: raw };
-    if (debounceTimers[pot.id]) clearTimeout(debounceTimers[pot.id]);
-    debounceTimers[pot.id] = setTimeout(async () => {
-      const maxV = maxVoltage(pot.port);
-      try {
-        await updateState({
-          potentiometers: { [pot.id]: { ...s, wiper_position: raw, voltage: (raw / 255) * maxV } }
-        });
-        const { [pot.id]: _, ...rest } = localWipers;
-        localWipers = rest;
-      } catch { /* ignore */ }
-      delete debounceTimers[pot.id];
-    }, 300);
+    if (deviceStore.monitoredPots.has(pot.id)) startCorrelation();
+    sendWiperUpdate(pot, raw);
   }
 
-  async function toggleEnabled(pot: PotentiometerDefinition) {
+  function toggleTerminal(pot: PotentiometerDefinition, bit: number) {
     const s = potState(pot.id);
     if (!s) return;
+    const newTcon = (s.tcon ?? 0) ^ bit;
     try {
-      await updateState({ potentiometers: { [pot.id]: { ...s, enabled: !s.enabled } } });
+      updateState({ potentiometers: { [pot.id]: { ...s, tcon: newTcon } } });
     } catch { /* ignore */ }
   }
-
-  onDestroy(() => {
-    Object.values(debounceTimers).forEach(t => clearTimeout(t));
-  });
 </script>
 
 {#if pinnedPots.length > 0}
@@ -81,7 +92,8 @@
           {#each pinnedPots as pot (pot.id)}
             {@const s = potState(pot.id)}
             {@const wp = wiperPos(pot)}
-            {@const enabled = s?.enabled ?? false}
+            {@const tconVal = s?.tcon ?? 0}
+            {@const enabled = tconVal === 7}
             {@const fn = ecuFunction(pot.pin)}
             <div class="bg-dark-surface rounded-lg p-2 space-y-1">
               <!-- Header row -->
@@ -101,6 +113,16 @@
                 </div>
                 <div class="flex items-center gap-1.5 flex-shrink-0 ml-1">
                   <span class="text-xs font-mono text-gray-300">{voltageDisplay(pot)}</span>
+                  <button
+                    class="leading-none transition-colors"
+                    class:text-orange-400={deviceStore.monitoredPots.has(pot.id)}
+                    class:text-gray-600={!deviceStore.monitoredPots.has(pot.id)}
+                    class:hover:text-orange-300={deviceStore.monitoredPots.has(pot.id)}
+                    class:hover:text-gray-400={!deviceStore.monitoredPots.has(pot.id)}
+                    style="min-height: unset; min-width: unset; padding: 2px; font-size: 10px;"
+                    onclick={() => togglePotMonitoring(pot.id)}
+                    title={deviceStore.monitoredPots.has(pot.id) ? 'Stop monitoring CAN correlation' : 'Monitor CAN correlation'}
+                  >&#9208;</button>
                   <button
                     class="text-gray-600 hover:text-red-400 transition-colors leading-none"
                     style="min-height: unset; min-width: unset; padding: 2px;"
@@ -134,16 +156,39 @@
                   </div>
                 </div>
 
-                <!-- On/Off button -->
-                <button
-                  class="w-full py-0.5 rounded text-xs font-semibold transition-colors"
-                  style="min-height: unset;"
-                  class:bg-green-700={enabled}
-                  class:hover:bg-green-600={enabled}
-                  class:bg-red-800={!enabled}
-                  class:hover:bg-red-700={!enabled}
-                  onclick={() => toggleEnabled(pot)}
-                >{enabled ? 'On' : 'Off'}</button>
+                <!-- Terminal checkboxes -->
+                <div class="flex gap-2 justify-between">
+                  <label class="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!(tconVal & 4)}
+                      onchange={() => toggleTerminal(pot, 4)}
+                      class="w-3.5 h-3.5 rounded border-gray-500 bg-dark-surface text-blue-500 cursor-pointer"
+                      style="min-height: unset; min-width: unset;"
+                    />
+                    <span class="text-xs text-gray-400">A</span>
+                  </label>
+                  <label class="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!(tconVal & 2)}
+                      onchange={() => toggleTerminal(pot, 2)}
+                      class="w-3.5 h-3.5 rounded border-gray-500 bg-dark-surface text-blue-500 cursor-pointer"
+                      style="min-height: unset; min-width: unset;"
+                    />
+                    <span class="text-xs text-gray-400">W</span>
+                  </label>
+                  <label class="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!(tconVal & 1)}
+                      onchange={() => toggleTerminal(pot, 1)}
+                      class="w-3.5 h-3.5 rounded border-gray-500 bg-dark-surface text-blue-500 cursor-pointer"
+                      style="min-height: unset; min-width: unset;"
+                    />
+                    <span class="text-xs text-gray-400">B</span>
+                  </label>
+                </div>
               {:else}
                 <p class="text-xs text-gray-600 italic">No state</p>
               {/if}

@@ -268,7 +268,7 @@ class CANService:
             self._rx_task.cancel()
             try:
                 await self._rx_task
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, Exception):
                 pass
             self._rx_task = None
 
@@ -286,6 +286,29 @@ class CANService:
 
         self._set_state(CANState.DISCONNECTED)
         return self.status()
+
+    async def _on_bus_error(self) -> None:
+        """Handle an unrecoverable bus error detected inside the RX loop.
+
+        Called via asyncio.create_task() so we run *after* the RX loop task
+        has already broken out, avoiding a deadlock with disconnect().
+        """
+        logger.warning("CAN interface lost — transitioning to disconnected")
+        self._cancel_claim_timer()
+        # The RX task is finishing naturally (broke out of its loop); clear the
+        # reference so disconnect() won't try to cancel/await it again.
+        self._rx_task = None
+        if self._bus:
+            try:
+                self._bus.shutdown()
+            except Exception:
+                pass
+            self._bus = None
+        for fut in self._svc_waiters.values():
+            if not fut.done():
+                fut.cancel()
+        self._svc_waiters.clear()
+        self._set_state(CANState.DISCONNECTED)
 
     # ------------------------------------------------------------------
     # Claim timer helpers (use async task, not call_later)
@@ -331,6 +354,11 @@ class CANService:
     # Interface discovery
     # ------------------------------------------------------------------
 
+    # Backends python-can can "detect" but that are not real CAN hardware on
+    # this host (udp_multicast/virtual are always synthesized). Hide them so the
+    # dropdown only offers interfaces a user can actually connect to.
+    _REAL_INTERFACES = {"socketcan", "pcan", "kvaser", "ixxat", "vector", "neovi", "seeedstudio"}
+
     def list_interfaces(self) -> list[Dict[str, Any]]:
         """Return available CAN interfaces detected on this host."""
         results: list[Dict[str, Any]] = []
@@ -338,11 +366,14 @@ class CANService:
             import can
             configs = can.detect_available_configs()
             for cfg in configs:
+                iface = cfg.get("interface", "")
+                if iface not in self._REAL_INTERFACES:
+                    continue
                 results.append({
-                    "interface": cfg.get("interface", ""),
+                    "interface": iface,
                     "channel": cfg.get("channel", ""),
                     "bitrate": cfg.get("bitrate", 250000),
-                    "description": f"{cfg.get('interface', '')} — {cfg.get('channel', '')}",
+                    "description": f"{iface} — {cfg.get('channel', '')}",
                 })
         except Exception as e:
             logger.warning(f"can.detect_available_configs() failed: {e}")
@@ -621,14 +652,32 @@ class CANService:
     # ------------------------------------------------------------------
 
     def _recv_one(self):
-        """Blocking CAN recv with 0.5 s timeout — intended for run_in_executor."""
+        """Blocking CAN recv with 0.5 s timeout — intended for run_in_executor.
+
+        Returns None on timeout (normal). Raises on bus errors so the RX loop
+        can detect interface disappearance (e.g. ip link set can0 down).
+        """
         bus = self._bus
         if bus is None:
             return None
+        return bus.recv(timeout=0.5)
+
+    def _check_interface_alive(self) -> bool:
+        """Return False if the SocketCAN interface is no longer UP.
+
+        Reads /sys/class/net/<channel>/flags and checks IFF_UP (0x1).
+        Non-socketcan interfaces (virtual, udp_multicast, …) always return True
+        because their channel strings aren't sysfs netdev names.
+        """
+        if self._interface != 'socketcan':
+            return True
         try:
-            return bus.recv(timeout=0.5)
+            flags = int(pathlib.Path(f'/sys/class/net/{self._channel}/flags').read_text().strip(), 16)
+            return bool(flags & 0x1)  # IFF_UP
+        except FileNotFoundError:
+            return False  # Interface removed entirely (USB unplugged)
         except Exception:
-            return None
+            return True  # Unknown error — assume alive rather than false-positive
 
     async def _rx_loop(self) -> None:
         """
@@ -645,6 +694,8 @@ class CANService:
         """
         logger.info("CAN RX loop started")
         loop = asyncio.get_running_loop()
+        _last_health_check = loop.time()
+        _HEALTH_INTERVAL = 3.0  # seconds between interface-state checks
 
         while True:
             try:
@@ -653,8 +704,22 @@ class CANService:
                 logger.info("CAN RX loop cancelled")
                 break
             except Exception as e:
-                logger.error(f"CAN RX loop error: {e}", exc_info=True)
+                logger.error(f"CAN bus error — forcing disconnect: {e}", exc_info=True)
+                asyncio.create_task(self._on_bus_error())
                 break
+
+            # Periodically verify the interface is still UP (SocketCAN doesn't
+            # raise on recv when the link is brought down — it just times out).
+            now = loop.time()
+            if now - _last_health_check >= _HEALTH_INTERVAL:
+                _last_health_check = now
+                alive = await loop.run_in_executor(None, self._check_interface_alive)
+                if not alive:
+                    logger.warning(
+                        f"Interface {self._channel} is no longer UP — disconnecting"
+                    )
+                    asyncio.create_task(self._on_bus_error())
+                    break
 
             if msg is None:
                 # recv() timed out — loop again (allows CancelledError to propagate)

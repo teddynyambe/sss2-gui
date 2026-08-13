@@ -11,6 +11,7 @@
     updateSPNsForChannel,
     addUnknownFrame,
     loadSelectedECUFromStorage,
+    loadMonitoredECUFromStorage,
   } from '$lib/stores/deviceStore.svelte';
   import { connectWebSocket, disconnectWebSocket, type WSMessage } from '$lib/api/wsClient';
   import { decodeSPNsFromFrame, type SpnDb } from '$lib/utils/spnDecode';
@@ -20,22 +21,52 @@
   import CANConnectionPanel from '$lib/components/CANConnectionPanel.svelte';
   import NetworkScanPanel from '$lib/components/NetworkScanPanel.svelte';
   import CANMonitorPanel from '$lib/components/CANMonitorPanel.svelte';
+  import CANInterfacePanel from '$lib/components/CANInterfacePanel.svelte';
   import ConnectionNotification from '$lib/components/ConnectionNotification.svelte';
   import ECUSelector from '$lib/components/ECUSelector.svelte';
+  import AdminPanel from '$lib/components/AdminPanel.svelte';
 
   type Route = 'dashboard' | 'settings' | 'network';
 
   let currentRoute = $state<Route>('dashboard');
+  let showAdmin = $state(false);
+
+  // Ctrl+Alt+A opens the admin panel (handy when a keyboard is attached).
+  function onGlobalKey(e: KeyboardEvent) {
+    if (e.ctrlKey && e.altKey && (e.key === 'a' || e.key === 'A')) {
+      e.preventDefault();
+      showAdmin = true;
+    }
+  }
   let unsubscribe: (() => void) | null = null;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
   let showNetworkPanel = $state(false);
   let spnDb = $state<SpnDb>({});
 
+  const navItems: { route: Route; label: string }[] = [
+    { route: 'dashboard', label: 'Dashboard' },
+    { route: 'settings', label: 'Settings' },
+    { route: 'network', label: 'Network' },
+  ];
+
   const canStatus = $derived(deviceStore.canStatus);
+
+  async function pollStatus() {
+    const prevClaimed = deviceStore.canStatus.address_claimed;
+    await fetchCANStatus();
+    const nowClaimed = deviceStore.canStatus.address_claimed;
+    if (!prevClaimed && nowClaimed) {
+      fetchState();
+    } else if (prevClaimed && !nowClaimed) {
+      deviceStore.deviceState = null;
+    }
+  }
 
   onMount(() => {
     fetchCatalog();
     fetchCANStatus();
     loadSelectedECUFromStorage();
+    loadMonitoredECUFromStorage();
 
     // Load SPN database for ECU monitoring
     fetch('/api/can/spn-db').then(r => { if (r.ok) r.json().then(db => { spnDb = db; }); });
@@ -44,6 +75,8 @@
     if (deviceStore.canStatus.address_claimed) {
       fetchState();
     }
+
+    pollTimer = setInterval(pollStatus, 5000);
 
     // WebSocket for real-time CAN events
     const wsClient = connectWebSocket();
@@ -72,7 +105,7 @@
         const ch = message.frame.channel ?? 'can0';
         addFrameForChannel(ch, message.frame);
 
-        const spnUpdates = decodeSPNsFromFrame(message.frame.pgn, message.frame.data, spnDb);
+        const spnUpdates = decodeSPNsFromFrame(message.frame.pgn, message.frame.data, spnDb, message.frame.arb_id);
 
         // Per-channel SPN storage for monitor panel tabs
         if (Object.keys(spnUpdates).length > 0) updateSPNsForChannel(ch, spnUpdates);
@@ -90,6 +123,7 @@
 
   onDestroy(() => {
     if (unsubscribe) unsubscribe();
+    if (pollTimer) clearInterval(pollTimer);
     disconnectWebSocket();
   });
 
@@ -99,36 +133,47 @@
 </script>
 
 <div class="min-h-screen bg-dark-bg text-white">
-  <!-- Fixed Top Navigation -->
-  <nav class="fixed top-0 left-0 right-0 z-[100] bg-[#103f03] border-b border-dark-card">
-    <div class="flex items-center justify-between px-4 py-3 gap-4 flex-wrap">
-      <h1 class="text-xl font-bold whitespace-nowrap">Smart Sensor Simulation 2 (SSS2)</h1>
-      <div class="flex items-center gap-3 flex-wrap flex-1">
-        <!-- CAN connection controls -->
-        <CANConnectionPanel />
+  <!-- Sticky Top Navigation (sticky, not fixed, so content can never slide under it) -->
+  <nav class="sticky top-0 z-[100] bg-[#103f03] border-b border-dark-card shadow-lg">
+    <!-- Row 1: Branding + primary navigation -->
+    <div class="flex items-center justify-between gap-4 px-4 py-2.5">
+      <h1 class="text-base sm:text-xl font-bold whitespace-nowrap">
+        <span class="hidden sm:inline">Smart Sensor Simulation 2 </span>(SSS2)
+      </h1>
+      <div class="flex items-center gap-2">
+        {#each navItems as item (item.route)}
+          <button
+            class="px-5 py-2 rounded-lg min-h-touch text-sm font-semibold transition-colors {currentRoute ===
+            item.route
+              ? 'bg-white text-[#103f03] shadow'
+              : 'bg-dark-card text-white hover:bg-dark-accent'}"
+            aria-current={currentRoute === item.route ? 'page' : undefined}
+            onclick={() => navigate(item.route)}
+          >
+            {item.label}
+          </button>
+        {/each}
+        <!-- Admin / maintenance (PIN-gated). Deliberately low-key. Ctrl+Alt+A also opens it. -->
+        <button
+          class="ml-1 px-3 py-2 rounded-lg min-h-touch text-lg text-white/70 hover:text-white hover:bg-dark-accent transition-colors"
+          title="Admin / maintenance"
+          aria-label="Admin / maintenance"
+          onclick={() => (showAdmin = true)}
+        >
+          ⚙
+        </button>
+      </div>
+    </div>
 
-        <!-- Navigation -->
-        <button
-          class="px-4 py-2 rounded bg-dark-card hover:bg-dark-accent transition-colors min-h-touch text-sm"
-          onclick={() => navigate('dashboard')}
-        >
-          Dashboard
-        </button>
-        <button
-          class="px-4 py-2 rounded bg-dark-card hover:bg-dark-accent transition-colors min-h-touch text-sm"
-          onclick={() => navigate('settings')}
-        >
-          Settings
-        </button>
-        <button
-          class="px-4 py-2 rounded bg-dark-card hover:bg-dark-accent transition-colors min-h-touch text-sm"
-          onclick={() => navigate('network')}
-        >
-          Network
-        </button>
+    <!-- Row 2: Connection controls + ECU / ignition -->
+    <div
+      class="flex items-center justify-between gap-x-4 gap-y-2 px-4 py-2 border-t border-white/10 flex-wrap"
+    >
+      <CANConnectionPanel />
+      <div class="flex items-center gap-3 ml-auto">
         <ECUSelector />
         <div class="flex items-center gap-2">
-          <span class="text-sm text-gray-400">Ignition</span>
+          <span class="text-sm text-gray-300">Ignition</span>
           <IgnitionToggle />
         </div>
       </div>
@@ -136,7 +181,7 @@
   </nav>
 
   <!-- Main Content -->
-  <main class="relative z-0 pt-24 pb-16 px-4">
+  <main class="relative z-0 pt-4 pb-20 px-4">
     {#if currentRoute === 'dashboard'}
       <Dashboard />
     {:else if currentRoute === 'settings'}
@@ -144,6 +189,7 @@
     {:else if currentRoute === 'network'}
       <div class="max-w-5xl mx-auto py-4">
         <h2 class="text-lg font-semibold mb-4">J1939 Network</h2>
+        <CANInterfacePanel />
         <NetworkScanPanel />
         <CANMonitorPanel />
       </div>
@@ -174,4 +220,9 @@
 
   <!-- Connection Notification (toast) -->
   <ConnectionNotification />
+
+  <!-- PIN-gated maintenance / admin panel -->
+  <AdminPanel bind:open={showAdmin} />
 </div>
+
+<svelte:window onkeydown={onGlobalKey} />

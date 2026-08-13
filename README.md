@@ -403,6 +403,10 @@ pytest tests/
 
 For questions or issues, contact Teddy Nyambe teddy@infinityworx.co
 
+## Acknowledgments
+
+Developed with coding assistance from [Claude](https://www.anthropic.com/claude) (Anthropic).
+
 ## License
 
-LGPL v3 (Lesser GPL v3) - All Rights Reserved
+MIT - All Rights Reserved

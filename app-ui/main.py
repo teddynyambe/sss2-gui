@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from middleware.orchestrator import Orchestrator
 from services.monitor_service import MonitorService
-from routers import health, sss2, catalog, connection, ecu, can
+from routers import health, sss2, catalog, connection, ecu, can, canctl, system
 
 
 # Configure logging
@@ -115,6 +115,8 @@ async def log_requests(request, call_next):
 app.include_router(health.router, prefix="/api")
 app.include_router(sss2.router, prefix="/api")
 app.include_router(can.router, prefix="/api")
+app.include_router(canctl.router, prefix="/api")
+app.include_router(system.router, prefix="/api")
 app.include_router(catalog.router, prefix="/api")
 app.include_router(connection.router, prefix="/api")
 app.include_router(ecu.router, prefix="/api")
@@ -123,21 +125,25 @@ app.include_router(ecu.router, prefix="/api")
 # ---------- Static File Serving ----------
 static_ui_path = Path(__file__).parent / "static" / "ui"
 if static_ui_path.exists():
+    # Optional legacy mount for old Vite "assets/" builds; harmless when absent
+    # (SvelteKit's static build keeps its assets under _app/, served by the catch-all).
     assets_path = static_ui_path / "assets"
     if assets_path.exists() and assets_path.is_dir():
         app.mount("/static", StaticFiles(directory=str(assets_path)), name="static")
 
-        @app.get("/{full_path:path}")
-        async def serve_ui(full_path: str):
-            if full_path.startswith("api"):
-                return None
-            file_path = static_ui_path / full_path
-            if file_path.exists() and file_path.is_file():
-                return FileResponse(file_path)
-            index_path = static_ui_path / "index.html"
-            if index_path.exists():
-                return FileResponse(index_path)
-            return {"error": "UI not found. Run 'npm run build' in ui/ directory."}
+    # SPA catch-all: serve any built file (index.html, _app/*, favicon, ...) and fall
+    # back to index.html for client-side routes. Registered whenever the UI is present.
+    @app.get("/{full_path:path}")
+    async def serve_ui(full_path: str):
+        if full_path.startswith("api"):
+            return None
+        file_path = static_ui_path / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        index_path = static_ui_path / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        return {"error": "UI not found. Build it (npm run build in ui/) and copy ui/build/* to app-ui/static/ui/."}
 
 
 if __name__ == "__main__":

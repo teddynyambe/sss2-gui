@@ -121,13 +121,18 @@ class Orchestrator:
         voltage_value = 0 if voltage_setting == "5V" else 1
         return await self.can_service.set_setting(sss2_sa, setting, voltage_value)
 
-    async def set_pot_enabled(self, sss2_sa: int, port: int, enabled: bool) -> bool:
-        """SET potentiometer terminal connection mode (settings 51-66)."""
+    async def set_pot_tcon(self, sss2_sa: int, port: int, tcon: int) -> bool:
+        """SET potentiometer terminal connection mode (settings 51-66).
+
+        tcon is a 3-bit value (0-7) where:
+          bit 0 = Terminal B (ground)
+          bit 1 = Wiper
+          bit 2 = Terminal A (5V/12V)
+        """
         if not self.can_service:
             raise RuntimeError("Orchestrator not initialized")
         setting = 50 + port  # pot 1 → setting 51, ..., pot 16 → setting 66
-        value = 7 if enabled else 3
-        return await self.can_service.set_setting(sss2_sa, setting, value)
+        return await self.can_service.set_setting(sss2_sa, setting, tcon & 0x07)
 
     async def apply_state_changes(self, sss2_sa: int, changes: dict) -> None:
         """Apply a dict of state changes to hardware."""
@@ -149,8 +154,8 @@ class Orchestrator:
         if "potentiometers" in changes:
             for pot_id, pot_data in changes["potentiometers"].items():
                 port = int(pot_id.replace("po", ""))
-                if "enabled" in pot_data:
-                    await self.set_pot_enabled(sss2_sa, port, pot_data["enabled"])
+                if "tcon" in pot_data:
+                    await self.set_pot_tcon(sss2_sa, port, pot_data["tcon"])
                 if "wiper_position" in pot_data:
                     await self.set_pot(sss2_sa, port, pot_data["wiper_position"])
 

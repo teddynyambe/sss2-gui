@@ -8,6 +8,24 @@ export interface HealthResponse {
   connected: boolean;
 }
 
+export interface IfaceState {
+  name: string;
+  present: boolean;   // interface exists in the kernel (MCP2515 overlay loaded)
+  up: boolean;        // link is administratively UP
+  bitrate: number | null;
+}
+
+export interface CanCtlStatus {
+  interfaces: IfaceState[];
+}
+
+export interface IfaceActionResponse {
+  name: string;
+  ok: boolean;
+  up: boolean;
+  detail: string;
+}
+
 export interface Catalog {
   potentiometers: PotentiometerDefinition[];
   vouts: any[];
@@ -42,7 +60,7 @@ export interface DeviceState {
 export interface PotentiometerState {
   wiper_position: number;
   voltage: number;
-  enabled: boolean;
+  tcon: number;  // 3-bit terminal connection: bit0=B(GND), bit1=Wiper, bit2=A(5V)
   application?: string;
   wire_color?: string;
 }
@@ -264,6 +282,36 @@ class ApiClient {
   async deleteECU(ecuId: string): Promise<void> {
     await this.request(`/ecu/${ecuId}`, {
       method: 'DELETE',
+    });
+  }
+
+  // ---------- CAN interface control (OS-level can0/can1 up/down) ----------
+
+  async getCANInterfaceStatus(): Promise<CanCtlStatus> {
+    return this.request<CanCtlStatus>('/canctl/status');
+  }
+
+  async canInterfaceUp(iface: string): Promise<IfaceActionResponse> {
+    return this.request<IfaceActionResponse>(`/canctl/${iface}/up`, { method: 'POST' });
+  }
+
+  async canInterfaceDown(iface: string): Promise<IfaceActionResponse> {
+    return this.request<IfaceActionResponse>(`/canctl/${iface}/down`, { method: 'POST' });
+  }
+
+  // ---------- System / kiosk admin (PIN-gated) ----------
+
+  async getSystemStatus(): Promise<{ admin_enabled: boolean }> {
+    return this.request('/system/status');
+  }
+
+  async systemAction(
+    action: 'exit-console' | 'exit-desktop' | 'restart-gui' | 'restart-app' | 'reboot' | 'shutdown' | 'update',
+    pin: string,
+  ): Promise<{ ok: boolean; action: string; detached: boolean }> {
+    return this.request('/system/action', {
+      method: 'POST',
+      body: JSON.stringify({ action, pin }),
     });
   }
 }

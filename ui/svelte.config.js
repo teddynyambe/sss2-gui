@@ -1,4 +1,4 @@
-import adapter from '@sveltejs/adapter-auto';
+import adapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 /** @type {import('@sveltejs/kit').Config} */
@@ -8,10 +8,12 @@ const config = {
 	preprocess: vitePreprocess(),
 
 	kit: {
-		// adapter-auto only supports some environments, see https://svelte.dev/docs/kit/adapter-auto for a list.
-		// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
-		// See https://svelte.dev/docs/kit/adapters for more information about adapters.
-		adapter: adapter()
+		// adapter-static: `npm run build` emits a pure client-side SPA into ./build
+		// (index.html + _app/...). FastAPI (app-ui) serves these files at / on :8000,
+		// so the UI and API share one origin — no node server, proxy, or CORS needed.
+		// `fallback` makes every unknown path return index.html (client-side routing).
+		// Requires ssr=false (set in src/routes/+layout.ts).
+		adapter: adapter({ fallback: 'index.html' })
 	}
 };
 

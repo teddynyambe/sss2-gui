@@ -42,7 +42,8 @@ export function extractBits(data: Uint8Array, bitOffset: number, length: number)
 export function decodeSPNsFromFrame(
   pgn: string,
   data: string,
-  db: SpnDb
+  db: SpnDb,
+  arb_id: string = ''
 ): Record<string, SPNValue> {
   const pgnDec = parseInt(pgn, 16).toString();
   const pgInfo = db[pgnDec];
@@ -60,6 +61,7 @@ export function decodeSPNsFromFrame(
     result[key] = {
       spn: spn.spn,
       pgn,
+      arb_id,
       label: spn.label,
       value: physical,
       unit: spn.unit,

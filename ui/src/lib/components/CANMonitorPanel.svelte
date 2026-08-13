@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { deviceStore, addFrameForChannel, type ECUFrame } from '$lib/stores/deviceStore.svelte';
+  import { deviceStore, addFrameForChannel, clearCorrelation, type ECUFrame } from '$lib/stores/deviceStore.svelte';
 
   const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
@@ -41,6 +41,15 @@
       : displayedFrames.filter(f =>
           f.sa.toUpperCase() === saFilter.trim().toUpperCase()
         )
+  );
+
+  // Sort correlated frames to the top
+  const sortedFrames = $derived(
+    filteredFrames.toSorted((a, b) => {
+      const aC = !!deviceStore.correlatedFrames[a.arb_id];
+      const bC = !!deviceStore.correlatedFrames[b.arb_id];
+      return aC === bC ? 0 : aC ? -1 : 1;
+    })
   );
 
   function clear() {
@@ -123,6 +132,15 @@
       >
         Clear
       </button>
+      {#if Object.keys(deviceStore.correlatedFrames).length > 0}
+        <button
+          class="px-3 py-1 text-xs rounded bg-orange-900/50 border border-orange-600/50 hover:bg-orange-800/50 text-orange-300 transition-colors"
+          onclick={clearCorrelation}
+          title="Clear correlation highlights"
+        >
+          Clear Correlation
+        </button>
+      {/if}
     </div>
   </div>
 
@@ -138,7 +156,7 @@
         </tr>
       </thead>
       <tbody>
-        {#if filteredFrames.length === 0}
+        {#if sortedFrames.length === 0}
           <tr>
             <td colspan="5" class="px-2 py-4 text-center text-gray-500">
               {#if !selectedChannel}
@@ -151,13 +169,28 @@
             </td>
           </tr>
         {:else}
-          {#each filteredFrames as frame (frame.ts + frame.arb_id)}
-            <tr class="border-b border-dark-bg hover:bg-dark-accent/20 transition-colors">
+          {#each sortedFrames as frame (frame._seq ?? frame.ts + frame.arb_id)}
+            {@const changedSet = new Set(deviceStore.correlatedFrames[frame.arb_id] ?? [])}
+            {@const isCorrelated = changedSet.size > 0}
+            <tr
+              class="border-b border-dark-bg hover:bg-dark-accent/20 transition-colors {isCorrelated ? 'bg-orange-950/30' : ''}"
+            >
               <td class="px-2 py-0.5 text-gray-400 whitespace-nowrap">{formatTime(frame.ts)}</td>
-              <td class="px-2 py-0.5 text-blue-300">{frame.arb_id}</td>
+              <td class="px-2 py-0.5 {isCorrelated ? 'text-orange-300' : 'text-blue-300'}">{frame.arb_id}</td>
               <td class="px-2 py-0.5 text-green-300">{frame.pgn}</td>
               <td class="px-2 py-0.5 text-yellow-300">{frame.sa}</td>
-              <td class="px-2 py-0.5 text-gray-200 tracking-wider">{frame.data}</td>
+              <td class="px-2 py-0.5 tracking-wider">
+                {#if isCorrelated}
+                  {@const bytes = frame.data.match(/.{2}/g) ?? []}
+                  <span class="font-mono text-xs">
+                    {#each bytes as byte, i}
+                      <span class={changedSet.has(i) ? 'text-red-400 font-bold' : 'text-gray-200'}>{byte}</span>{#if i < bytes.length - 1}<span class="text-gray-600"> </span>{/if}
+                    {/each}
+                  </span>
+                {:else}
+                  <span class="text-gray-200">{frame.data}</span>
+                {/if}
+              </td>
             </tr>
           {/each}
         {/if}
@@ -166,7 +199,10 @@
   </div>
 
   <p class="text-right text-xs text-gray-500 mt-1">
-    {filteredFrames.length} frame{filteredFrames.length !== 1 ? 's' : ''}
+    {sortedFrames.length} frame{sortedFrames.length !== 1 ? 's' : ''}
     {paused ? '· paused' : ''}
+    {#if Object.keys(deviceStore.correlatedFrames).length > 0}
+      · <span class="text-orange-400">{Object.keys(deviceStore.correlatedFrames).length} correlated</span>
+    {/if}
   </p>
 </div>
