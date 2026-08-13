@@ -305,6 +305,10 @@ class ApiClient {
     return this.request('/system/status');
   }
 
+  async getHostInfo(): Promise<{ hostname: string; ip: string }> {
+    return this.request('/system/host');
+  }
+
   async systemAction(
     action: 'exit-console' | 'exit-desktop' | 'restart-gui' | 'restart-app' | 'reboot' | 'shutdown' | 'update',
     pin: string,

@@ -14,6 +14,7 @@
     loadMonitoredECUFromStorage,
   } from '$lib/stores/deviceStore.svelte';
   import { connectWebSocket, disconnectWebSocket, type WSMessage } from '$lib/api/wsClient';
+  import { apiClient } from '$lib/api/client';
   import { decodeSPNsFromFrame, type SpnDb } from '$lib/utils/spnDecode';
   import Dashboard from '$lib/pages/Dashboard.svelte';
   import Settings from '$lib/pages/Settings.svelte';
@@ -30,6 +31,7 @@
 
   let currentRoute = $state<Route>('dashboard');
   let showAdmin = $state(false);
+  let hostInfo = $state<{ hostname: string; ip: string } | null>(null);
 
   // Ctrl+Alt+A opens the admin panel (handy when a keyboard is attached).
   function onGlobalKey(e: KeyboardEvent) {
@@ -67,6 +69,7 @@
     fetchCANStatus();
     loadSelectedECUFromStorage();
     loadMonitoredECUFromStorage();
+    apiClient.getHostInfo().then((h) => (hostInfo = h)).catch(() => {});
 
     // Load SPN database for ECU monitoring
     fetch('/api/can/spn-db').then(r => { if (r.ok) r.json().then(db => { spnDb = db; }); });
@@ -198,8 +201,15 @@
 
   <!-- Fixed Bottom Footer -->
   <footer class="fixed bottom-0 left-0 right-0 z-[100] bg-[#0a2338] border-t border-dark-card px-4 py-2">
-    <div class="flex justify-end">
-      <div class="text-sm text-gray-400">
+    <div class="flex justify-between items-center gap-3">
+      <div class="text-sm text-gray-400 font-mono truncate">
+        {#if hostInfo}
+          <span class="text-gray-500">Host:</span>
+          <span class="text-blue-300">http://{hostInfo.ip}:8000</span>
+          <span class="hidden sm:inline text-gray-500"> · {hostInfo.hostname}</span>
+        {/if}
+      </div>
+      <div class="text-sm text-gray-400 whitespace-nowrap">
         CAN: {#if canStatus.address_claimed}
           <span class="text-green-400">
             Claimed SA 0x{canStatus.sa.toString(16).toUpperCase().padStart(2, '0')}

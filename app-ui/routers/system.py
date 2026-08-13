@@ -13,6 +13,7 @@ Security model:
 import asyncio
 import hmac
 import logging
+import socket
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -21,6 +22,24 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/system", tags=["system"])
+
+
+def _primary_ip() -> str:
+    """Best-effort primary LAN IP (the address on the default-route interface)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))  # no packets sent; just picks the outbound iface
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+@router.get("/host")
+async def system_host() -> dict:
+    """Hostname + primary LAN IP, for display on the kiosk footer."""
+    return {"hostname": socket.gethostname(), "ip": _primary_ip()}
 
 # Actions performed by the root-owned helper (it re-validates them itself).
 HELPER_ACTIONS = {"exit-console", "exit-desktop", "restart-gui", "restart-app", "reboot", "shutdown"}
